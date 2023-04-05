@@ -1,0 +1,13 @@
+*.png
+*.pth
+*log.txt
+*.jpg
+*.log
+*.jsonl
+*.pt
+*.pdf
+__pycache__/
+trained_models/
+samples/
+logs/.ipynb_checkpoints/
+
