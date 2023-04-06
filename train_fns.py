@@ -186,7 +186,8 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
   if ((config['which_best'] == 'IS' and IS_mean > state_dict['best_IS'])
     or (config['which_best'] == 'FID' and FID < state_dict['best_FID'])
       or (config['which_best'] == 'P' and P > state_dict['best_P'])
-        or (config['which_best'] == 'R' and R > state_dict['best_R'])):
+        or (config['which_best'] == 'R' and R > state_dict['best_R'])
+          or (config['which_best'] == 'P+R' and R+P > state_dict['best_P+R'])):
     print('%s improved over previous best, saving checkpoint...' % config['which_best'])
     utils.save_weights(G, D, state_dict, config['weights_root'],
                        experiment_name, 'best%d' % state_dict['save_best_num'],
@@ -196,6 +197,8 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
   state_dict['best_FID'] = min(state_dict['best_FID'], FID)
   state_dict['best_P'] = max(state_dict['best_P'], P)
   state_dict['best_R'] = max(state_dict['best_R'], R)
+  state_dict['best_P+R'] = max(state_dict['best_P+R'], P+R)
+
   # Log results to file
   test_log.log(itr=int(state_dict['itr']), IS_mean=float(IS_mean),
                IS_std=float(IS_std), FID=float(FID), P=float(P), R=float(R))
