@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torchvision
 import os
-
+import logging
 import utils
 import losses
 
@@ -41,8 +41,8 @@ def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
         D_fake, D_real = GD(z_[:config['batch_size']], y_[:config['batch_size']], 
                             x[counter], y[counter], train_G=False, 
                             split_D=config['split_D'])
-        # print(f'Fake Min/Max {D_fake.min()}/{D_fake.max()}')
-        # print(f'Real Min/Max {D_real.min()}/{D_real.max()}')
+        # logging.info(f'Fake Min/Max {D_fake.min()}/{D_fake.max()}')
+        # logging.info(f'Real Min/Max {D_real.min()}/{D_real.max()}')
         # Compute components of D's loss, average them, and divide by 
         # the number of gradient accumulations
         D_loss_real, D_loss_fake = discriminator_loss(D_fake, D_real)
@@ -53,7 +53,7 @@ def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
       # Optionally apply ortho reg in D
       if config['D_ortho'] > 0.0:
         # Debug print to indicate we're using ortho reg in D.
-        print('using modified ortho reg in D')
+        logging.info('using modified ortho reg in D')
         utils.ortho(D, config['D_ortho'])
       
       D.optim.step()
@@ -85,7 +85,7 @@ def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
         counter += 1
     # Optionally apply modified ortho reg in G
     if config['G_ortho'] > 0.0:
-      print('using modified ortho reg in G') # Debug print to indicate we're using ortho reg in G
+      logging.info('using modified ortho reg in G') # Debug print to indicate we're using ortho reg in G
       # Don't ortho reg shared, it makes no sense. Really we should blacklist any embeddings for this
       utils.ortho(G, config['G_ortho'], 
                   blacklist=[param for param in G.shared.parameters()])
@@ -179,8 +179,8 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
                                                config['num_inception_images'],
                                                num_splits=10)
   P, R = get_pr_metric(sample)
-  print('Itr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID))
-  print('Itr %d: PYTORCH UNOFFICIAL Precision is %2.3f, PYTORCH UNOFFICIAL Recall is %2.3f' % (state_dict['itr'], P*100, R*100))
+  logging.info('Itr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID))
+  logging.info('Itr %d: PYTORCH UNOFFICIAL Precision is %2.3f, PYTORCH UNOFFICIAL Recall is %2.3f' % (state_dict['itr'], P*100, R*100))
 
   # If improved over previous best metric, save approrpiate copy
   if ((config['which_best'] == 'IS' and IS_mean > state_dict['best_IS'])
@@ -188,7 +188,7 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
       or (config['which_best'] == 'P' and P > state_dict['best_P'])
         or (config['which_best'] == 'R' and R > state_dict['best_R'])
           or (config['which_best'] == 'P+R' and R+P > state_dict['best_P+R'])):
-    print('%s improved over previous best, saving checkpoint...' % config['which_best'])
+    logging.info('%s improved over previous best, saving checkpoint...' % config['which_best'])
     utils.save_weights(G, D, state_dict, config['weights_root'],
                        experiment_name, 'best%d' % state_dict['save_best_num'],
                        G_ema if config['ema'] else None)

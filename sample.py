@@ -4,7 +4,7 @@ import functools
 import math
 import numpy as np
 from tqdm import tqdm, trange
-
+import logging
 
 import torch
 import torch.nn as nn
@@ -16,12 +16,13 @@ import torchvision
 
 # Import my stuff
 import inception_utils
+import precision_recall_utils
 import utils
 import losses
 
 
 
-def run(config):
+def run_sampler(config):
   # Prepare state dict, which holds things like epoch # and itr #
   state_dict = {'itr': 0, 'epoch': 0, 'save_num': 0, 'save_best_num': 0,
                 'best_IS': 0, 'best_FID': 999999, 'config': config}
@@ -50,7 +51,8 @@ def run(config):
   
   # Seed RNG
   utils.seed_rng(config['seed'])
-   
+  utils.setup_logging(config)
+
   # Setup cudnn.benchmark for free speed
   torch.backends.cudnn.benchmark = True
   
@@ -58,13 +60,13 @@ def run(config):
   model = __import__(config['model'])
   experiment_name = (config['experiment_name'] if config['experiment_name']
                        else utils.name_from_config(config))
-  print('Experiment name is %s' % experiment_name)
+  logging.info('Experiment name is %s' % experiment_name)
   
   G = model.Generator(**config).cuda()
   utils.count_parameters(G)
   
   # Load weights
-  print('Loading weights...')
+  logging.info('Loading weights...')
   # Here is where we deal with the ema--load ema weights or load normal weights
   utils.load_weights(G if not (config['use_ema']) else None, None, state_dict, 
                      config['weights_root'], experiment_name, config['load_weights'],
@@ -77,15 +79,15 @@ def run(config):
                              z_var=config['z_var'])
   
   if config['G_eval_mode']:
-    print('Putting G in eval mode..')
+    logging.info('Putting G in eval mode..')
     G.eval()
   else:
-    print('G is in %s mode...' % ('training' if G.training else 'eval'))
+    logging.info('G is in %s mode...' % ('training' if G.training else 'eval'))
     
   #Sample function
   sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)  
   if config['accumulate_stats']:
-    print('Accumulating standing stats across %d accumulations...' % config['num_standing_accumulations'])
+    logging.info('Accumulating standing stats across %d accumulations...' % config['num_standing_accumulations'])
     utils.accumulate_standing_stats(G, z_, y_, config['n_classes'],
                                     config['num_standing_accumulations'])
     
@@ -94,7 +96,7 @@ def run(config):
   if config['sample_npz']:
     # Lists to hold images and labels for images
     x, y = [], []
-    print('Sampling %d images and saving them to npz...' % config['sample_num_npz'])
+    logging.info('Sampling %d images and saving them to npz...' % config['sample_num_npz'])
     for i in trange(int(np.ceil(config['sample_num_npz'] / float(G_batch_size)))):
       with torch.no_grad():
         images, labels = sample()
@@ -102,14 +104,14 @@ def run(config):
       y += [labels.cpu().numpy()]
     x = np.concatenate(x, 0)[:config['sample_num_npz']]
     y = np.concatenate(y, 0)[:config['sample_num_npz']]    
-    print('Images shape: %s, Labels shape: %s' % (x.shape, y.shape))
+    logging.info('Images shape: %s, Labels shape: %s' % (x.shape, y.shape))
     npz_filename = '%s/%s/samples.npz' % (config['samples_root'], experiment_name)
-    print('Saving npz to %s...' % npz_filename)
+    logging.info('Saving npz to %s...' % npz_filename)
     np.savez(npz_filename, **{'x' : x, 'y' : y})
   
   # Prepare sample sheets
   if config['sample_sheets']:
-    print('Preparing conditional sample sheets...')
+    logging.info('Preparing conditional sample sheets...')
     utils.sample_sheet(G, classes_per_sheet=utils.classes_per_sheet_dict[config['dataset']], 
                          num_classes=config['n_classes'], 
                          samples_per_class=10, parallel=config['parallel'],
@@ -119,7 +121,7 @@ def run(config):
                          z_=z_,)
   # Sample interp sheets
   if config['sample_interps']:
-    print('Preparing interp sheets...')
+    logging.info('Preparing interp sheets...')
     for fix_z, fix_y in zip([False, False, True], [False, True, False]):
       utils.interp_sheet(G, num_per_sheet=16, num_midpoints=8,
                          num_classes=config['n_classes'], 
@@ -131,7 +133,7 @@ def run(config):
                          fix_z=fix_z, fix_y=fix_y, device='cuda')
   # Sample random sheet
   if config['sample_random']:
-    print('Preparing random sample sheet...')
+    logging.info('Preparing random sample sheet...')
     loaders = utils.get_data_loaders(**{**config, 'batch_size': config['batch_size'] ,
                                       'start_itr': state_dict['itr']})
     
@@ -143,10 +145,14 @@ def run(config):
 
   # Get Inception Score and FID
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'], config['parallel'], config['no_fid'])
+  # Prepare vgg metrics: Precision and Recall
+  get_pr_metric = precision_recall_utils.prepare_pr_metrics(config)
+
   # Prepare a simple function get metrics that we use for trunc curves
   def get_metrics():
     sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)    
     IS_mean, IS_std, FID = get_inception_metrics(sample, config['num_inception_images'], num_splits=10, prints=False)
+    P, R = get_pr_metric(sample)
     # Prepare output string
     outstring = 'Using %s weights ' % ('ema' if config['use_ema'] else 'non-ema')
     outstring += 'in %s mode, ' % ('eval' if config['G_eval_mode'] else 'training')
@@ -156,16 +162,18 @@ def run(config):
       outstring += 'with batch size %d, ' % G_batch_size
     if config['accumulate_stats']:
       outstring += 'using %d standing stat accumulations, ' % config['num_standing_accumulations']
-    outstring += 'Itr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID)
-    print(outstring)
+    outstring += '\nItr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID)
+    outstring += 'Itr %d: PYTORCH UNOFFICIAL Precision is %2.3f, PYTORCH UNOFFICIAL Recall is %2.3f' % (state_dict['itr'], P*100, R*100)
+
+    logging.info(outstring)
   if config['sample_inception_metrics']: 
-    print('Calculating Inception metrics...')
+    logging.info('Calculating Inception metrics...')
     get_metrics()
     
   # Sample truncation curve stuff. This is basically the same as the inception metrics code
   if config['sample_trunc_curves']:
     start, step, end = [float(item) for item in config['sample_trunc_curves'].split('_')]
-    print('Getting truncation values for variance in range (%3.3f:%3.3f:%3.3f)...' % (start, step, end))
+    logging.info('Getting truncation values for variance in range (%3.3f:%3.3f:%3.3f)...' % (start, step, end))
     for var in np.arange(start, end + step, step):     
       z_.var = var
       # Optionally comment this out if you want to run with standing stats
@@ -174,17 +182,15 @@ def run(config):
         utils.accumulate_standing_stats(G, z_, y_, config['n_classes'],
                                     config['num_standing_accumulations'])
       get_metrics()
-  if config['sample_num_samples_PR']:
-    print('ah que coucou')
-    sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)  
 
 def main():
   # parse command line and run    
   parser = utils.prepare_parser()
   parser = utils.add_sample_parser(parser)
   config = vars(parser.parse_args())
+  config['mode'] = 'sample'
   print(config)
-  run(config)
+  run_sampler(config)
   
 if __name__ == '__main__':    
   main()

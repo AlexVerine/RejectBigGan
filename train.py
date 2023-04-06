@@ -13,15 +13,15 @@ import math
 import numpy as np
 from tqdm import tqdm, trange
 
-
+import time
 import torch
 import torch.nn as nn
 from torch.nn import init
 import torch.optim as optim
-import torch.nn.functional as F
+import torch.nn.functional as F 
 from torch.nn import Parameter as P
 import torchvision
-
+import logging
 # Import my stuff
 import inception_utils
 import precision_recall_utils
@@ -45,7 +45,7 @@ def run(config):
   config['D_activation'] = utils.activation_dict[config['D_nl']]
   # By default, skip init if resuming training.
   if config['resume']:
-    print('Skipping initialization for training resumption...')
+    logging.info('Skipping initialization for training resumption...')
     config['skip_init'] = True
   config = utils.update_config_roots(config)
   device = 'cuda'
@@ -55,7 +55,7 @@ def run(config):
 
   # Prepare root folders if necessary
   utils.prepare_root(config)
-
+  utils.setup_logging(config)
   # Setup cudnn.benchmark for free speed
   torch.backends.cudnn.benchmark = True
 
@@ -63,7 +63,7 @@ def run(config):
   model = __import__(config['model'])
   experiment_name = (config['experiment_name'] if config['experiment_name']
                        else utils.name_from_config(config))
-  print('Experiment name is %s' % experiment_name)
+  logging.info('Experiment name is %s' % experiment_name)
 
   # Next, build the model
   G = model.Generator(**config).to(device)
@@ -71,7 +71,7 @@ def run(config):
   
    # If using EMA, prepare it
   if config['ema']:
-    print('Preparing EMA for G with decay of {}'.format(config['ema_decay']))
+    logging.info('Preparing EMA for G with decay of {}'.format(config['ema_decay']))
     G_ema = model.Generator(**{**config, 'skip_init':True, 
                                'no_optim': True}).to(device)
     ema = utils.ema(G, G_ema, config['ema_decay'], config['ema_start'])
@@ -80,18 +80,18 @@ def run(config):
   
   # FP16?
   if config['G_fp16']:
-    print('Casting G to float16...')
+    logging.info('Casting G to float16...')
     G = G.half()
     if config['ema']:
       G_ema = G_ema.half()
   if config['D_fp16']:
-    print('Casting D to fp16...')
+    logging.info('Casting D to fp16...')
     D = D.half()
     # Consider automatically reducing SN_eps?
   GD = model.G_D(G, D)
-  print(G)
-  print(D)
-  print('Number of params in G: {} D: {}'.format(
+  logging.info(G)
+  logging.info(D)
+  logging.info('Number of params in G: {} D: {}'.format(
     *[sum([p.data.nelement() for p in net.parameters()]) for net in [G,D]]))
   # Prepare state dict, which holds things like epoch # and itr #
   state_dict = {'itr': 0, 'epoch': 0, 'save_num': 0, 'save_best_num': 0,
@@ -99,7 +99,7 @@ def run(config):
 
   # If loading from a pre-trained model, load weights
   if config['resume']:
-    print('Loading weights...')
+    logging.info('Loading weights...')
     utils.load_weights(G, D, state_dict,
                        config['weights_root'], experiment_name, 
                        config['load_weights'] if config['load_weights'] else None,
@@ -116,10 +116,10 @@ def run(config):
   test_metrics_fname = '%s/%s_log.jsonl' % (config['logs_root'],
                                             experiment_name)
   train_metrics_fname = '%s/%s' % (config['logs_root'], experiment_name)
-  print('Inception Metrics will be saved to {}'.format(test_metrics_fname))
+  logging.info('Inception Metrics will be saved to {}'.format(test_metrics_fname))
   test_log = utils.MetricsLogger(test_metrics_fname, 
                                  reinitialize=(not config['resume']))
-  print('Training Metrics will be saved to {}'.format(train_metrics_fname))
+  logging.info('Training Metrics will be saved to {}'.format(train_metrics_fname))
   train_log = utils.MyLogger(train_metrics_fname, 
                              reinitialize=(not config['resume']),
                              logstyle=config['logstyle'])
@@ -133,7 +133,7 @@ def run(config):
                   * config['num_D_accumulations'])
   loaders = utils.get_data_loaders(**{**config, 'batch_size': D_batch_size,
                                       'start_itr': state_dict['itr']})
-
+  config['total_itr'] = (config['num_epochs']-state_dict['epoch'])*len(loaders[0])
   # Prepare inception metrics: FID and IS
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'], config['parallel'], config['no_fid'])
   #Prepare vgg metrics: Precision and Recall
@@ -162,7 +162,8 @@ def run(config):
                                  else G),
                               z_=z_, y_=y_, config=config)
 
-  print('Beginning training at epoch %d...' % state_dict['epoch'])
+  logging.info(f'Beginning training at epoch {state_dict["epoch"]} for {config["total_itr"]} iterations.')
+  t_init = time.time()
   # Train for specified number of epochs, although we mostly track G iterations.
   for epoch in range(state_dict['epoch'], config['num_epochs']):    
     # Which progressbar to use? TQDM or my own?
@@ -193,14 +194,14 @@ def run(config):
 
       # If using my progbar, print metrics.
       if config['pbar'] == 'mine':
-          print(', '.join(['itr: %d' % state_dict['itr']] 
+          logging.info(', '.join(['itr: %d' % state_dict['itr']] 
                            + ['%s : %+4.3f' % (key, metrics[key])
                            for key in metrics]), end=' ')
 
       # Save weights and copies as configured at specified interval
       if not (state_dict['itr'] % config['save_every']):
         if config['G_eval_mode']:
-          print('Switchin G to eval mode...')
+          logging.info('Switchin G to eval mode...')
           G.eval()
           if config['ema']:
             G_ema.eval()
@@ -210,10 +211,12 @@ def run(config):
       # Test every specified interval
       if not (state_dict['itr'] % config['test_every']):
         if config['G_eval_mode']:
-          print('Switchin G to eval mode...')
+          logging.info('Switchin G to eval mode...')
           G.eval()
         train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
                        get_inception_metrics, get_pr_metric, experiment_name, test_log)
+        logging.info(f';\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
+              + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) // 3600:2.1f} hours.')
     # Increment epoch counter at end of epoch
     state_dict['epoch'] += 1
 
@@ -222,6 +225,8 @@ def main():
   # parse command line and run
   parser = utils.prepare_parser()
   config = vars(parser.parse_args())
+  config['mode'] = 'train'
+
   print(config)
   run(config)
 

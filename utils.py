@@ -17,7 +17,7 @@ import json
 import pickle
 from argparse import ArgumentParser
 import animal_hash
-
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -252,7 +252,7 @@ def prepare_parser():
     help='Default location to store all weights, samples, data, and logs '
            ' (default: %(default)s)')
   parser.add_argument(
-    '--data_root', type=str, default='~/data',
+    '--data_root', type=str, default=None,
     help='Default location where data is stored (default: %(default)s)')
   parser.add_argument(
     '--weights_root', type=str, default='weights',
@@ -418,6 +418,37 @@ def add_sample_parser(parser):
   
   return parser
 
+def add_cluster_parser(parser):
+  # submitit settings
+  parser.add_argument("--ngpus", type=int, default=None, 
+                      help="Number of GPUs to use.")
+  parser.add_argument("--nnodes", type=int, default=1, 
+                      help="Number of nodes (> 1 is distrubuted training).")
+  parser.add_argument("--timeout", type=int, default=1200,
+                      help="Time of the Slurm job in minutes for training.")
+  parser.add_argument("--partition", type=str, default="gpu_p13",
+                      help="Partition to use for Slurm.")
+  parser.add_argument("--mem_constraint", type=str, default=None,
+                      help="Add constraint for choice of GPUs: 16 or 32")
+  parser.add_argument("--cpus_per_task", default=None,
+                      action='store_true')
+  parser.add_argument("--qos", type=str, default="qos_gpu-t3",
+                      help="Choose Quality of Service for slurm job.")
+  parser.add_argument("--local", action='store_true',
+                      help="Execute with local machine instead of slurm.")
+  parser.add_argument("--debug", action="store_true",
+                      help="Activate debug mode.")
+  parser.add_argument("--account", type=str, default='yxj', choices=['yxj', 'esq'], 
+                      help="Idris account")
+  parser.add_argument("--local", action='store_true',
+                      help="Execute with local machine instead of slurm.")
+  parser.add_argument("--debug", action="store_true",
+                      help="Activate debug mode.")
+  parser.add_argument("--mode", default="train", choices=['train', 'sample'])
+  return parser
+
+
+
 # Convenience dicts
 dset_dict = {'I32': dset.ImageFolder, 'I64': dset.ImageFolder, 
              'I128': dset.ImageFolder, 'I256': dset.ImageFolder,
@@ -531,12 +562,22 @@ class MultiEpochSampler(torch.utils.data.Sampler):
       # return iter(torch.randint(high=n, size=(self.num_samples,), dtype=torch.int64).tolist())
     # return iter(.tolist())
     output = torch.cat(out).tolist()
-    print('Length dataset output is %d' % len(output))
+    logging.info('Length dataset output is %d' % len(output))
     return iter(output)
 
   def __len__(self):
     return len(self.data_source) * self.num_epochs - self.start_itr * self.batch_size
 
+def get_data_dir(config):
+    paths = config['data_root'].split(':')
+    data_dir = None
+    for path in paths:
+      if os.path.exists(os.path.join(path, config['dataset'])):
+        data_dir = path
+        break
+    if data_dir is None:
+      raise ValueError(f"Data directory not found. Make sure to prepare dataset and put in \n{config['data_root']}. ")
+    return data_dir
 
 # Convenience function to centralize all data loaders
 def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64, 
@@ -547,7 +588,7 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
 
   # Append /FILENAME.hdf5 to root if using hdf5
   data_root += '/%s' % root_dict[dataset]
-  print('Using dataset root location %s' % data_root)
+  logging.info('Using dataset root location %s' % data_root)
 
   which_dataset = dset_dict[dataset]
   norm_mean = [0.5,0.5,0.5]
@@ -562,7 +603,7 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
     train_transform = None
   else:
     if augment:
-      print('Data will be augmented...')
+      logging.info('Data will be augmented...')
       if dataset in ['C10', 'C100']:
         train_transform = [transforms.RandomCrop(32, padding=4),
                            transforms.RandomHorizontalFlip()]
@@ -571,7 +612,7 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
                          transforms.Resize(image_size),
                          transforms.RandomHorizontalFlip()]
     else:
-      print('Data will not be augmented...')
+      logging.info('Data will not be augmented...')
       if dataset in ['C10', 'C100']:
         train_transform = []
       else:
@@ -587,7 +628,7 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
   # using validation / test splits.
   loaders = []   
   if use_multiepoch_sampler:
-    print('Using multiepoch sampler from start_itr %d...' % start_itr)
+    logging.info('Using multiepoch sampler from start_itr %d...' % start_itr)
     loader_kwargs = {'num_workers': num_workers, 'pin_memory': pin_memory}
     sampler = MultiEpochSampler(train_set, num_epochs, start_itr, batch_size)
     train_loader = DataLoader(train_set, batch_size=batch_size,
@@ -639,7 +680,7 @@ class ema(object):
     # Initialize target's params to be source's
     self.source_dict = self.source.state_dict()
     self.target_dict = self.target.state_dict()
-    print('Initializing EMA parameters to be source parameters...')
+    logging.info('Initializing EMA parameters to be source parameters...')
     with torch.no_grad():
       for key in self.source_dict:
         self.target_dict[key].data.copy_(self.source_dict[key].data)
@@ -708,9 +749,9 @@ def save_weights(G, D, state_dict, weights_root, experiment_name,
   if not os.path.exists(root):
     os.mkdir(root)
   if name_suffix:
-    print('Saving weights to %s/%s...' % (root, name_suffix))
+    logging.info('Saving weights to %s/%s...' % (root, name_suffix))
   else:
-    print('\nSaving weights to %s...' % root)
+    logging.info('\nSaving weights to %s...' % root)
   torch.save(G.state_dict(), 
               '%s/%s.pth' % (root, join_strings('_', ['G', name_suffix])))
   torch.save(G.optim.state_dict(), 
@@ -731,9 +772,9 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
                  name_suffix=None, G_ema=None, strict=True, load_optim=True):
   root = '/'.join([weights_root, experiment_name])
   if name_suffix:
-    print('Loading %s weights from %s...' % (name_suffix, root))
+    logging.info('Loading %s weights from %s...' % (name_suffix, root))
   else:
-    print('Loading weights from %s...' % root)
+    logging.info('Loading weights from %s...' % root)
   if G is not None:
     G.load_state_dict(
       torch.load('%s/%s.pth' % (root, join_strings('_', ['G', name_suffix]))),
@@ -765,7 +806,7 @@ class MetricsLogger(object):
     self.reinitialize = reinitialize
     if os.path.exists(self.fname):
       if self.reinitialize:
-        print('{} exists, deleting...'.format(self.fname))
+        logging.info('{} exists, deleting...'.format(self.fname))
         os.remove(self.fname)
 
   def log(self, record=None, **kwargs):
@@ -799,12 +840,12 @@ class MyLogger(object):
   def reinit(self, item):
     if os.path.exists('%s/%s.log' % (self.root, item)):
       if self.reinitialize:
-        # Only print the removal mess
+        # Only logging.info the removal mess
         if 'sv' in item :
           if not any('sv' in item for item in self.metrics):
-            print('Deleting singular value logs...')
+            logging.info('Deleting singular value logs...')
         else:
-          print('{} exists, deleting...'.format('%s_%s.log' % (self.root, item)))
+          logging.info('{} exists, deleting...'.format('%s_%s.log' % (self.root, item)))
         os.remove('%s/%s.log' % (self.root, item))
   
   # Log in plaintext; this is designed for being read in MATLAB(sorry not sorry)
@@ -815,15 +856,22 @@ class MyLogger(object):
           self.reinit(arg)
         self.metrics += [arg]
       if self.logstyle == 'pickle':
-        print('Pickle not currently supported...')
+        logging.info('Pickle not currently supported...')
          # with open('%s/%s.log' % (self.root, arg), 'a') as f:
           # pickle.dump(kwargs[arg], f)
       elif self.logstyle == 'mat':
-        print('.mat logstyle not currently supported...')
+        logging.info('.mat logstyle not currently supported...')
       else:
         with open('%s/%s.log' % (self.root, arg), 'a') as f:
           f.write('%d: %s\n' % (itr, self.logstyle % kwargs[arg]))
 
+def setup_logging(config):
+  level = {'DEBUG': 10, 'ERROR': 40, 'FATAL': 50,
+    'INFO': 20, 'WARN': 30
+  }[20]
+  format_ = "[%(asctime)s %(filename)s:%(lineno)s] %(message)s"
+  filename = '{}/log_{}.logs'.format(config['train_dir'], config['mode'])
+  logging.basicConfig(filename=filename, level=level, format=format_, datefmt='%H:%M:%S')
 
 # Write some metadata to the logs directory
 def write_metadata(logs_root, experiment_name, config, state_dict):
@@ -843,7 +891,7 @@ estimated time to 1k iters instead of estimated time to completion.
 """
 def progress(items, desc='', total=None, min_delay=0.1, displaytype='s1k'):
   """
-  Returns a generator over `items`, printing the number and percentage of
+  Returns a generator over `items`, logging.infoing the number and percentage of
   items processed and the estimated remaining processing time before yielding
   the next item. `total` gives the total number of items (required if `items`
   has no length), and `min_delay` gives the minimum time in seconds between
@@ -855,7 +903,7 @@ def progress(items, desc='', total=None, min_delay=0.1, displaytype='s1k'):
   for n, item in enumerate(items):
     t_now = time.time()
     if t_now - t_last > min_delay:
-      print("\r%s%d/%d (%6.2f%%)" % (
+      logging.info("\r%s%d/%d (%6.2f%%)" % (
               desc, n+1, total, n / float(total) * 100), end=" ")
       if n > 0:
         
@@ -864,18 +912,18 @@ def progress(items, desc='', total=None, min_delay=0.1, displaytype='s1k'):
           t_done = t_now - t_start
           t_1k = t_done / n * next_1000
           outlist = list(divmod(t_done, 60)) + list(divmod(t_1k - t_done, 60))
-          print("(TE/ET1k: %d:%02d / %d:%02d)" % tuple(outlist), end=" ")
+          logging.info("(TE/ET1k: %d:%02d / %d:%02d)" % tuple(outlist), end=" ")
         else:# displaytype == 'eta':
           t_done = t_now - t_start
           t_total = t_done / n * total
           outlist = list(divmod(t_done, 60)) + list(divmod(t_total - t_done, 60))
-          print("(TE/ETA: %d:%02d / %d:%02d)" % tuple(outlist), end=" ")
+          logging.info("(TE/ETA: %d:%02d / %d:%02d)" % tuple(outlist), end=" ")
           
-      sys.stdout.flush()
+      logging.handlers[0].flush()
       t_last = t_now
     yield item
   t_total = time.time() - t_start
-  print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) +
+  logging.info("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) +
                                                    divmod(t_total, 60)))
 
 
@@ -975,7 +1023,7 @@ def print_grad_norms(net):
                  float(torch.norm(param).item()), param.shape]
                 for param in net.parameters()]
     order = np.argsort([item[0] for item in gradsums])
-    print(['%3.3e,%3.3e, %s' % (gradsums[item_index][0],
+    logging.info(['%3.3e,%3.3e, %s' % (gradsums[item_index][0],
                                 gradsums[item_index][1],
                                 str(gradsums[item_index][2])) 
                               for item_index in order])
@@ -1060,7 +1108,7 @@ def query_gpu(indices):
 
 # Convenience function to count the number of parameters in a module
 def count_parameters(module):
-  print('Number of parameters: {}'.format(
+  logging.info('Number of parameters: {}'.format(
     sum([p.data.nelement() for p in module.parameters()])))
 
    
@@ -1212,3 +1260,5 @@ class Adam16(Optimizer):
         p.data = state['fp32_p'].half()
 
     return loss
+
+
