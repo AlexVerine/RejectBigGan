@@ -3,7 +3,7 @@ import sys
 import submitit
 from train import run 
 from sample import run_sampler
-from utils import prepare_parser, add_sample_parser, add_cluster_parser, prepare_root
+from utils import prepare_parser, add_sample_parser, add_cluster_parser, prepare_root, name_from_config
 
 def main():
   # parse command line and run
@@ -14,7 +14,11 @@ def main():
     config = vars(parser.parse_args())
     if config['debug']:
         config['experiment_name'] = 'folder_debug'
-
+    else:
+        experiment_name = (config['experiment_name'] if config['experiment_name']
+            else name_from_config(config))
+    print('Experiment name is %s' % experiment_name)
+    
     prepare_root(config)
     config['train_dir'] = os.path.join('logs',config['experiment_name']) 
     #   print(config)
