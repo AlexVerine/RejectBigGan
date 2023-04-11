@@ -36,11 +36,11 @@ class pr_loss_dis(torch.nn.Module):
     self.l = config['lambda']
 
   def forward(self, dis_fake, dis_real):
-    print(f'\nBefore {dis_fake.min():.2f}/{dis_fake.max():.2f}, {dis_real.min():.2f}/{dis_real.max():.2f}')
+    # print(f'\nBefore {dis_fake.min():.2f}/{dis_fake.max():.2f}, {dis_real.min():.2f}/{dis_real.max():.2f}')
 
     dis_fake = torch.clamp(dis_fake, min=0)
     dis_real = torch.clamp(dis_real, max=self.l)
-    print(f'After {dis_fake.mean():.2f} ({dis_fake.min():.2f}/{dis_fake.max():.2f}),  {dis_real.mean():.2f} ({dis_real.min():.2f}/{dis_real.max():.2f})')
+    # print(f'After {dis_fake.mean():.2f} ({dis_fake.min():.2f}/{dis_fake.max():.2f}),  {dis_real.mean():.2f} ({dis_real.min():.2f}/{dis_real.max():.2f})')
 
     loss_real = -torch.mean(dis_real)
     loss_fake = torch.mean(dis_fake/self.l)

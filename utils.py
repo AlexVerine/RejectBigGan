@@ -411,7 +411,7 @@ def add_sample_parser(parser):
     '--sample_inception_metrics', action='store_true', default=False,
     help='Calculate Inception metrics with sample.py? (default: %(default)s)')  
   parser.add_argument(
-    '--sample_num_samples_PR',type=int, default=5000,
+    '--sample_num_samples_PR',type=int, default=10000,
     help='Number of images to sample to compute the PR curves '
          '(default: %(default)s)')
   
@@ -751,7 +751,7 @@ def save_weights(G, D, state_dict, weights_root, experiment_name,
   if name_suffix:
     logging.info('Saving weights to %s/%s...' % (root, name_suffix))
   else:
-    logging.info('\nSaving weights to %s...' % root)
+    logging.info('Saving weights to %s...' % root)
   torch.save(G.state_dict(), 
               '%s/%s.pth' % (root, join_strings('_', ['G', name_suffix])))
   torch.save(G.optim.state_dict(), 
@@ -775,6 +775,8 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
     logging.info('Loading %s weights from %s...' % (name_suffix, root))
   else:
     logging.info('Loading weights from %s...' % root)
+  logging.info('Loading %s weights from %s...' % (name_suffix, root))
+
   if G is not None:
     G.load_state_dict(
       torch.load('%s/%s.pth' % (root, join_strings('_', ['G', name_suffix]))),
@@ -868,9 +870,14 @@ class MyLogger(object):
 def setup_logging(config):
   level = {'DEBUG': 10, 'ERROR': 40, 'FATAL': 50,
     'INFO': 20, 'WARN': 30
-  }[20]
+  }['INFO']
   format_ = "[%(asctime)s %(filename)s:%(lineno)s] %(message)s"
-  filename = '{}/log_{}.logs'.format(config['train_dir'], config['mode'])
+  folder = 'logs/{}'.format(config['experiment_name'])
+  if not os.path.exists(folder):
+    os.mkdir(folder)
+  filename = 'logs/{}/log_{}.logs'.format(config['experiment_name'], config['mode'])
+  print(f'tail -F {filename}')
+
   logging.basicConfig(filename=filename, level=level, format=format_, datefmt='%H:%M:%S')
 
 # Write some metadata to the logs directory
@@ -904,7 +911,7 @@ def progress(items, desc='', total=None, min_delay=0.1, displaytype='s1k'):
     t_now = time.time()
     if t_now - t_last > min_delay:
       logging.info("\r%s%d/%d (%6.2f%%)" % (
-              desc, n+1, total, n / float(total) * 100), end=" ")
+              desc, n+1, total, n / float(total) * 100))
       if n > 0:
         
         if displaytype == 's1k': # minutes/seconds for 1000 iters
@@ -912,14 +919,13 @@ def progress(items, desc='', total=None, min_delay=0.1, displaytype='s1k'):
           t_done = t_now - t_start
           t_1k = t_done / n * next_1000
           outlist = list(divmod(t_done, 60)) + list(divmod(t_1k - t_done, 60))
-          logging.info("(TE/ET1k: %d:%02d / %d:%02d)" % tuple(outlist), end=" ")
+          logging.info("(TE/ET1k: %d:%02d / %d:%02d)" % tuple(outlist))
         else:# displaytype == 'eta':
           t_done = t_now - t_start
           t_total = t_done / n * total
           outlist = list(divmod(t_done, 60)) + list(divmod(t_total - t_done, 60))
-          logging.info("(TE/ETA: %d:%02d / %d:%02d)" % tuple(outlist), end=" ")
-          
-      logging.handlers[0].flush()
+          logging.info("(TE/ETA: %d:%02d / %d:%02d)" % tuple(outlist))
+      sys.stdout.flush()          
       t_last = t_now
     yield item
   t_total = time.time() - t_start

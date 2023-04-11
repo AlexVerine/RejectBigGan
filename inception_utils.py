@@ -14,7 +14,7 @@
 import numpy as np
 from scipy import linalg # For numpy FID
 import time
-
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -180,13 +180,13 @@ def numpy_calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
   if not np.isfinite(covmean).all():
     msg = ('fid calculation produces singular product; '
            'adding %s to diagonal of cov estimates') % eps
-    print(msg)
+    logging.info(msg)
     offset = np.eye(sigma1.shape[0]) * eps
     covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
 
   # Numerical error might give slight imaginary component
   if np.iscomplexobj(covmean):
-    print('wat')
+    logging.info('wat')
     if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
       m = np.max(np.abs(covmean.imag))
       raise ValueError('Imaginary component {}'.format(m))
@@ -263,7 +263,7 @@ def load_inception_net(parallel=False):
   inception_model = inception_v3(pretrained=True, transform_input=False)
   inception_model = WrapInception(inception_model.eval()).cuda()
   if parallel:
-    print('Parallelizing Inception module...')
+    # logging.info('Parallelizing Inception module...')
     inception_model = nn.DataParallel(inception_model)
   return inception_model
 
@@ -284,28 +284,28 @@ def prepare_inception_metrics(dataset, parallel, no_fid=False):
   def get_inception_metrics(sample, num_inception_images, num_splits=10, 
                             prints=False, use_torch=True):
     if prints:
-      print('Gathering activations...')
+      logging.info('Gathering activations...')
     pool, logits, labels = accumulate_inception_activations(sample, net, num_inception_images)
     if prints:  
-      print('Calculating Inception Score...')
+      logging.info('Calculating Inception Score...')
     IS_mean, IS_std = calculate_inception_score(logits.cpu().numpy(), num_splits)
     if no_fid:
       FID = 9999.0
     else:
       if prints:
-        print('Calculating means and covariances...')
+        logging.info('Calculating means and covariances...')
       if use_torch:
         mu, sigma = torch.mean(pool, 0), torch_cov(pool, rowvar=False)
       else:
         mu, sigma = np.mean(pool.cpu().numpy(), axis=0), np.cov(pool.cpu().numpy(), rowvar=False)
       if prints:
-        print('Covariances calculated, getting FID...')
+        logging.info('Covariances calculated, getting FID...')
       if use_torch:
 
         FID = torch_calculate_frechet_distance(mu, sigma, torch.tensor(data_mu).float().cuda(), torch.tensor(data_sigma).float().cuda())
         FID = float(FID.cpu().numpy())
       else:
-        FID = numpy_calculate_frechet_distance(mu.cpu().numpy(), sigma.cpu().numpy(), data_mu, data_sigma)
+        FID = numpy_calculate_frechet_distance(mu, sigma, data_mu, data_sigma)
     # Delete mu, sigma, pool, logits, and labels, just in case
     del mu, sigma, pool, logits, labels
     return IS_mean, IS_std, FID

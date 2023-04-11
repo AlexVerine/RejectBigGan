@@ -4,6 +4,7 @@ from collections import namedtuple
 from glob import glob
 import numpy as np
 from PIL import Image
+import logging
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import torch
 import torchvision.models as models
@@ -72,7 +73,6 @@ class IPR():
         # features
         if isinstance(input, str):
             if input.endswith('.npz'):  # input is precalculated file
-                print('loading', input)
                 f = np.load(input)
                 feats = f['feature']
                 radii = f['radii']
@@ -90,7 +90,6 @@ class IPR():
         elif isinstance(input, list):
             if isinstance(input[0], torch.Tensor):
                 input = torch.cat(input, dim=0)
-                print(input.shape)
 
                 feats = self.extract_features(input)
             elif isinstance(input[0], np.ndarray):
@@ -102,7 +101,7 @@ class IPR():
             else:
                 raise TypeError
         else:
-            print(type(input))
+            logging.info(type(input))
             raise TypeError
 
         # radii
@@ -180,7 +179,7 @@ class IPR():
         dataloader = get_custom_loader(path_or_fnames, batch_size=self.batch_size, num_samples=self.num_samples)
         num_found_images = len(dataloader.dataset)
         if num_found_images < self.num_samples:
-            print('WARNING: num_found_images(%d) < num_samples(%d)' % (num_found_images, self.num_samples))
+            logging.info('WARNING: num_found_images(%d) < num_samples(%d)' % (num_found_images, self.num_samples))
 
         features = []
         for batch in dataloader:
@@ -192,7 +191,7 @@ class IPR():
         return np.concatenate(features, axis=0)
 
     def save_ref(self, fname):
-        print('saving manifold to', fname, '...')
+        logging.info('saving manifold to', fname, '...')
         np.savez_compressed(fname,
                             feature=self.manifold_ref.features,
                             radii=self.manifold_ref.radii)
@@ -229,7 +228,7 @@ def compute_pairwise_distances(X, Y=None):
     if min_diff_square < 0:
         idx = diff_square < 0
         diff_square[idx] = 0
-        # print('WARNING: %d negative diff_squares found and set to zero, min_diff_square=' % idx.sum(),
+        # logging.info('WARNING: %d negative diff_squares found and set to zero, min_diff_square=' % idx.sum(),
         #       min_diff_square)
 
     distances = np.sqrt(diff_square)
@@ -355,7 +354,7 @@ def prepare_pr_metrics(config):
 
     def get_pr_metrics(sample, prints=False):
         if prints:
-            print('Gathering activations and computing pr')
+            logging.info('Gathering activations and computing pr')
         precision, recall = ipr.precision_and_recall(sample)
         
         return precision, recall

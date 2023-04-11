@@ -7,7 +7,7 @@ import sys
 from PIL import Image
 import numpy as np
 from tqdm import tqdm, trange
-
+import logging
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 from torchvision.datasets.utils import download_url, check_integrity
@@ -110,12 +110,12 @@ class ImageFolder(data.Dataset):
     classes, class_to_idx = find_classes(root)
     # Load pre-computed image directory walk
     if os.path.exists(index_filename):
-      print('Loading pre-saved Index file %s...' % index_filename)
+      logging.info('Loading pre-saved Index file %s...' % index_filename)
       imgs = np.load(index_filename)['imgs']
     # If first time, walk the folder directory and save the 
     # results to a pre-computed file.
     else:
-      print('Generating  Index file %s...' % index_filename)
+      logging.info('Generating  Index file %s...' % index_filename)
       imgs = make_dataset(root, class_to_idx)
       np.savez_compressed(index_filename, **{'imgs' : imgs})
     if len(imgs) == 0:
@@ -132,7 +132,7 @@ class ImageFolder(data.Dataset):
     self.load_in_mem = load_in_mem
     
     if self.load_in_mem:
-      print('Loading all images into memory...')
+      logging.info('Loading all images into memory...')
       self.data, self.labels = [], []
       for index in tqdm(range(len(self.imgs))):
         path, target = imgs[index][0], imgs[index][1]
@@ -160,7 +160,7 @@ class ImageFolder(data.Dataset):
     if self.target_transform is not None:
       target = self.target_transform(target)
     
-    # print(img.size(), target)
+    # logging.info(img.size(), target)
     return img, int(target)
 
   def __len__(self):
@@ -200,7 +200,7 @@ class ILSVRC_HDF5(data.Dataset):
     
     # If loading into memory, do so now
     if self.load_in_mem:
-      print('Loading %s into memory...' % root)
+      logging.info('Loading %s into memory...' % root)
       with h5.File(root,'r') as f:
         self.data = f['imgs'][:]
         self.labels = f['labels'][:]
@@ -299,7 +299,7 @@ class CIFAR10(dset.CIFAR10):
       self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
     
     elif self.train:
-      print(np.shape(self.data))
+      logging.info(np.shape(self.data))
       if self.val_split > 0:
         self.data = np.delete(self.data,self.val_indices,axis=0)
         self.labels = list(np.delete(np.asarray(self.labels),self.val_indices,axis=0))

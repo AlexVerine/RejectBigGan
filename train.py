@@ -49,13 +49,11 @@ def run(config):
     config['skip_init'] = True
   config = utils.update_config_roots(config)
   device = 'cuda'
-  
+  # Prepare root folders if necessary
+  utils.prepare_root(config)
   # Seed RNG
   utils.seed_rng(config['seed'])
 
-  # Prepare root folders if necessary
-  utils.prepare_root(config)
-  utils.setup_logging(config)
   # Setup cudnn.benchmark for free speed
   torch.backends.cudnn.benchmark = True
 
@@ -63,6 +61,12 @@ def run(config):
   model = __import__(config['model'])
   experiment_name = (config['experiment_name'] if config['experiment_name']
                        else utils.name_from_config(config))
+  config['experiment_name'] = experiment_name
+  print(experiment_name)
+
+
+
+  utils.setup_logging(config)
   logging.info('Experiment name is %s' % experiment_name)
 
   # Next, build the model
@@ -134,6 +138,7 @@ def run(config):
   loaders = utils.get_data_loaders(**{**config, 'batch_size': D_batch_size,
                                       'start_itr': state_dict['itr']})
   config['total_itr'] = (config['num_epochs']-state_dict['epoch'])*len(loaders[0])
+  config['log_itr'] = [i*(len(loaders[0])//5) for i in range(5)]+[len(loaders[0])-1]
   # Prepare inception metrics: FID and IS
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'], config['parallel'], config['no_fid'])
   #Prepare vgg metrics: Precision and Recall
@@ -166,12 +171,9 @@ def run(config):
   t_init = time.time()
   # Train for specified number of epochs, although we mostly track G iterations.
   for epoch in range(state_dict['epoch'], config['num_epochs']):    
-    # Which progressbar to use? TQDM or my own?
-    if config['pbar'] == 'mine':
-      pbar = utils.progress(loaders[0],displaytype='s1k' if config['use_multiepoch_sampler'] else 'eta')
-    else:
-      pbar = tqdm(loaders[0])
-    for i, (x, y) in enumerate(pbar):
+    # Which progressbar to use? TQDM or my own
+    t0 = time.time()
+    for i, (x, y) in enumerate(loaders[0]):
       # Increment the iteration counter
       state_dict['itr'] += 1
       # Make sure G and D are in training mode, just in case they got set to eval
@@ -193,11 +195,16 @@ def run(config):
                       **{**utils.get_SVs(G, 'G'), **utils.get_SVs(D, 'D')})
 
       # If using my progbar, print metrics.
-      if config['pbar'] == 'mine':
-          logging.info(', '.join(['itr: %d' % state_dict['itr']] 
-                           + ['%s : %+4.3f' % (key, metrics[key])
-                           for key in metrics]), end=' ')
-
+     
+      if i in config["log_itr"]:
+        
+          logging.info(f'[{epoch:d}/{config["num_epochs"]:d}]({i+1}/{len(loaders[0])})({int(time.time()-t0):d}s/{int((len(loaders[0])-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] } ')
+          logging.info('\t'+' ,'.join(['%s : %+4.3f' % (key, metrics[key])
+                           for key in metrics]))
+          # logging.info()
+          # logging.info(', '.join(['itr: %d' % state_dict['itr']] 
+          #                  + ['%s : %+4.3f' % (key, metrics[key])
+          #                  for key in metrics]))
       # Save weights and copies as configured at specified interval
       if not (state_dict['itr'] % config['save_every']):
         if config['G_eval_mode']:
@@ -216,16 +223,31 @@ def run(config):
         train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
                        get_inception_metrics, get_pr_metric, experiment_name, test_log)
         logging.info(f';\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
-              + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) // 3600:2.1f} hours.')
+              + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) / 3600:2.1f} hours.')
     # Increment epoch counter at end of epoch
     state_dict['epoch'] += 1
-
+  
+  if config['G_eval_mode']:
+    logging.info('Switchin G to eval mode...')
+    G.eval()
+    if config['ema']:
+      G_ema.eval()
+  train_fns.save_and_sample(G, D, G_ema, z_, y_, fixed_z, fixed_y, 
+                            state_dict, config, experiment_name)
 
 def main():
   # parse command line and run
   parser = utils.prepare_parser()
   config = vars(parser.parse_args())
   config['mode'] = 'train'
+
+  if config['data_root'] is None:
+      config['data_root'] = os.environ.get('DATADIR', None)
+  if config['data_root'] is None:
+      ValueError("the following arguments are required: --data_dir")
+  if config['data_root'] is None:
+    config['data_root'] = os.environ.get('DATADIR', None)
+
 
   print(config)
   run(config)
