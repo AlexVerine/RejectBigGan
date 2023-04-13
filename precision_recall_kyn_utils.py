@@ -5,7 +5,6 @@ from glob import glob
 import numpy as np
 from PIL import Image
 import logging
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import torch
 import torchvision.models as models
 import torch.nn.functional as F

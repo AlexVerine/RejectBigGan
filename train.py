@@ -24,7 +24,9 @@ import torchvision
 import logging
 # Import my stuff
 import inception_utils
-import precision_recall_utils
+import precision_recall_kyn_utils
+import precision_recall_simon_utils
+
 import utils
 import losses
 import train_fns
@@ -142,7 +144,8 @@ def run(config):
   # Prepare inception metrics: FID and IS
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'], config['parallel'], config['no_fid'])
   #Prepare vgg metrics: Precision and Recall
-  get_pr_metric = precision_recall_utils.prepare_pr_metrics(config)
+  get_pr_metric = precision_recall_kyn_utils.prepare_pr_metrics(config)
+  get_pr_curve = precision_recall_simon_utils.prepare_pr_curve(config)
   # Prepare noise and randomly sampled label arrays
   # Allow for different batch sizes in G
   G_batch_size = max(config['G_batch_size'], config['batch_size'])
@@ -221,7 +224,7 @@ def run(config):
           logging.info('Switchin G to eval mode...')
           G.eval()
         train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
-                       get_inception_metrics, get_pr_metric, experiment_name, test_log)
+                       get_inception_metrics, get_pr_metric, get_pr_curve, experiment_name, test_log)
         logging.info(f';\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
               + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) / 3600:2.1f} hours.')
     # Increment epoch counter at end of epoch

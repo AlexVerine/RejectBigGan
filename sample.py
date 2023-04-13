@@ -17,7 +17,8 @@ import torchvision
 
 # Import my stuff
 import inception_utils
-import precision_recall_utils
+import precision_recall_kyn_utils
+import precision_recall_simon_utils
 import utils
 import losses
 
@@ -152,16 +153,19 @@ def run_sampler(config):
   # Get Inception Score and FID
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'], config['parallel'], config['no_fid'])
   # Prepare vgg metrics: Precision and Recall
-  get_pr_metric = precision_recall_utils.prepare_pr_metrics(config)
-
+  get_pr_metric = precision_recall_kyn_utils.prepare_pr_metrics(config)
+  get_pr_curve = precision_recall_simon_utils.prepare_pr_curve(config)
   # Prepare a simple function get metrics that we use for trunc curves
   def get_metrics():
     sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)    
+    Ps, Rs = get_pr_curve(sample,state_dict['itr'] )
+
     IS_mean, IS_std, FID = get_inception_metrics(sample, config['num_inception_images'], 
                                                  num_splits=10, 
                                                  prints=False,
                                                  use_torch=False)
     P, R = get_pr_metric(sample)
+    
     # Prepare output string
     outstring = 'Using %s weights ' % ('ema' if config['use_ema'] else 'non-ema')
     outstring += 'in %s mode, ' % ('eval' if config['G_eval_mode'] else 'training')
@@ -172,7 +176,8 @@ def run_sampler(config):
     if config['accumulate_stats']:
       outstring += 'using %d standing stat accumulations, ' % config['num_standing_accumulations']
     outstring += '\nItr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID)
-    outstring += '\nItr %d: PYTORCH UNOFFICIAL Precision is %2.3f, PYTORCH UNOFFICIAL Recall is %2.3f' % (state_dict['itr'], P*100, R*100)
+    outstring += '\nItr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100)
+    outstring += '\nItr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100)
 
     logging.info(outstring)
   if config['sample_inception_metrics']: 

@@ -873,11 +873,13 @@ def setup_logging(config):
   }['INFO']
   format_ = "[%(asctime)s %(filename)s:%(lineno)s] %(message)s"
   folder = 'logs/{}'.format(config['experiment_name'])
-  if not os.path.exists(folder):
-    os.mkdir(folder)
-  filename = 'logs/{}/log_{}.logs'.format(config['experiment_name'], config['mode'])
+  os.makedirs(folder, exist_ok=True)
+  filename = 'logs/{}/log_{}'.format(config['experiment_name'], config['mode'])
+  # filename += 'resume' if config['resume'] else ''
+  filename += '.logs'
   print(f'tail -F {filename}')
-
+  for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
   logging.basicConfig(filename=filename, level=level, format=format_, datefmt='%H:%M:%S')
 
 # Write some metadata to the logs directory
