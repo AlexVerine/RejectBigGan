@@ -30,7 +30,7 @@ def prepare_parser():
     '--batch_size', type=int, default=64,
     help='Default overall batchsize (default: %(default)s)')
   parser.add_argument(
-    '--parallel', action='store_true', default=False,
+    '--parallel', action='store_true', default=True,
     help='Train with multiple GPUs (default: %(default)s)')
   parser.add_argument(
     '--augment', action='store_true', default=False,

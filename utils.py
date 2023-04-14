@@ -460,11 +460,16 @@ imsize_dict = {'I32': 32, 'I32_hdf5': 32,
                'I128': 128, 'I128_hdf5': 128,
                'I256': 256, 'I256_hdf5': 256,
                'C10': 32, 'C100': 32}
-root_dict = {'I32': 'ImageNet', 'I32_hdf5': 'ILSVRC32.hdf5',
-             'I64': 'ImageNet', 'I64_hdf5': 'ILSVRC64.hdf5',
-             'I128': 'ImageNet', 'I128_hdf5': 'ILSVRC128.hdf5',
-             'I256': 'ImageNet', 'I256_hdf5': 'ILSVRC256.hdf5',
+root_dict = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
+             'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
+             'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
+             'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
              'C10': 'cifar', 'C100': 'cifar'}
+name_dset = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
+             'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
+             'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
+             'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
+             'C10': 'cifar10', 'C100': 'cifar100'}
 nclass_dict = {'I32': 1000, 'I32_hdf5': 1000,
                'I64': 1000, 'I64_hdf5': 1000,
                'I128': 1000, 'I128_hdf5': 1000,
@@ -568,15 +573,15 @@ class MultiEpochSampler(torch.utils.data.Sampler):
   def __len__(self):
     return len(self.data_source) * self.num_epochs - self.start_itr * self.batch_size
 
-def get_data_dir(config):
-    paths = config['data_root'].split(':')
+def get_data_dir(data_root, dataset):
+    paths = data_root.split(':')
     data_dir = None
     for path in paths:
-      if os.path.exists(os.path.join(path, config['dataset'])):
+      if os.path.exists(os.path.join(path, name_dset[dataset])):
         data_dir = path
         break
     if data_dir is None:
-      raise ValueError(f"Data directory not found. Make sure to prepare dataset and put in \n{config['data_root']}. ")
+      raise ValueError(f"Data directory not found. Make sure to prepare dataset and put in \n{data_root}. ")
     return data_dir
 
 # Convenience function to centralize all data loaders
@@ -585,7 +590,8 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
                      pin_memory=True, drop_last=True, start_itr=0,
                      num_epochs=500, use_multiepoch_sampler=False,
                      **kwargs):
-
+  print(data_root)
+  data_root = get_data_dir(data_root, dataset)
   # Append /FILENAME.hdf5 to root if using hdf5
   data_root += '/%s' % root_dict[dataset]
   logging.info('Using dataset root location %s' % data_root)
