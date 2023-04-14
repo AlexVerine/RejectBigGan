@@ -140,7 +140,30 @@ class PRLoss(nn.Module):
     loss = - self.alpha_train(pqr, pqf, self.l)*0.5 - self.beta_train(pqr, pqf, self.l)*0.5
     return loss
 
+def rate(config):
+  if config['which_loss'] == 'vanilla':
+    def rate_vanilla(Dx):
+      return Dx>0
+    return rate_vanilla
+  else:
+    if config['which_div'] == 'Chi2':
+      def ratechi2(Dx):
+        return  Dx>0
+      return ratechi2
+    elif config['which_div'] == 'KL':
+      def ratekl(Dx):
+        return  Dx>1
+      return ratekl
+    elif config['which_div'] == 'rKL':
+      def ratekl(Dx):
+        return  Dx>-1
+      return ratekl
+    elif config['which_div'] == 'pr':
+      def ratepr(Dx):
+        return  Dx>config['lambda']/2
+      return ratepr
 
+  
 def load_loss(config):
   if config['which_loss'] == 'vanilla':
     return loss_hinge_gen, loss_hinge_dis
@@ -162,8 +185,8 @@ def load_loss(config):
       loss_dis = rkl_loss_dis
     return PRLoss(config), loss_dis
 
-# # Default to hinge loss
-# generator_loss = loss_hinge_gen
-# discriminator_loss = loss_hinge_dis
-generator_loss = kl_loss_gen
-discriminator_loss = kl_loss_dis
+# # # Default to hinge loss
+# # generator_loss = loss_hinge_gen
+# # discriminator_loss = loss_hinge_dis
+# generator_loss = kl_loss_gen
+# discriminator_loss = kl_loss_dis

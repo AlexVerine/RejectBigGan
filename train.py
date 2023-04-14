@@ -202,7 +202,7 @@ def run(config):
       if i in config["log_itr"]:
         
           logging.info(f'[{epoch:d}/{config["num_epochs"]:d}]({i+1}/{len(loaders[0])})({int(time.time()-t0):d}s/{int((len(loaders[0])-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] } ')
-          logging.info('\t'+' ,'.join(['%s : %+4.3f' % (key, metrics[key])
+          logging.info('\t'+', '.join(['%s : %+4.3f' % (key, metrics[key])
                            for key in metrics]))
           # logging.info()
           # logging.info(', '.join(['itr: %d' % state_dict['itr']] 

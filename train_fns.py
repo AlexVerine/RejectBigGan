@@ -19,6 +19,7 @@ def dummy_training_function():
 
 def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
   generator_loss, discriminator_loss = losses.load_loss(config)
+  discriminator_rate = losses.rate(config)
   def train(x, y):
     G.optim.zero_grad()
     D.optim.zero_grad()
@@ -97,7 +98,10 @@ def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
     
     out = {'G_loss': float(G_loss.item()), 
             'D_loss_real': float(D_loss_real.item()),
-            'D_loss_fake': float(D_loss_fake.item())}
+            'D_loss_fake': float(D_loss_fake.item()),
+            'Acc_real': float(torch.sum(discriminator_rate(D_real))/D_real.size(0)*100),
+            'Acc_fake': float(100-torch.sum(discriminator_rate(D_fake))/D_fake.size(0)*100)}
+
     # Return G's loss and the components of D's loss.
     return out
   return train
