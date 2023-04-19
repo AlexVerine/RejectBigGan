@@ -69,7 +69,7 @@ def run(config):
   ipr = precision_recall_kyn_utils.IPR(batch_size=64, k=3, num_samples=config['num_pr_images'], model=None)
 
   ipr.compute_manifold_ref(imgs)
-  ipr.save_ref('samples/features/'+config['dataset'].strip('_hdf5')+'_vgg_features.npy')
+  ipr.save_ref('samples/features/'+config['dataset'].strip('_hdf5')+'_vgg_features.npz')
 
 
 def main():

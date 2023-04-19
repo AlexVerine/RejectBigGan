@@ -6,6 +6,8 @@ import numpy as np
 from PIL import Image
 import logging
 import torch
+import torch.nn as nn
+
 import torchvision.models as models
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -25,7 +27,17 @@ class IPR():
         self.k = k
         self.num_samples = num_samples
         if model is None:
-            self.vgg16 = DataParallel(models.vgg16(pretrained=True)).cuda().eval()
+            cnn = models.vgg16(pretrained=True)
+
+        # https://discuss.pytorch.org/t/how-to-delete-layer-in-pretrained-model/17648/5
+        # extract 2nd FC ReLU
+
+        # 아래 말고 다음과 같이 뽑아 낼 수 도 있음. content_targets = [A.detach() for A in vgg(content_image, content_layers)] 
+        # 다음 URL 참조. https://github.com/leongatys/PytorchNeuralStyleTransfer
+            cnn.classifier = nn.Sequential(*[cnn.classifier[i] for i in range(5)])
+            cnn = DataParallel(cnn).cuda().eval()
+
+            self.vgg16 = cnn
         else:
             self.vgg16 = model
 
@@ -131,12 +143,11 @@ class IPR():
             end = start + self.batch_size
             batch , _ = sample()
             batch = resize(batch)
-            before_fc = self.vgg16.module.features(batch.cuda())
-            before_fc = before_fc.view(-1, 7 * 7 * 512)
-            feature = self.vgg16.module.classifier[:4](before_fc)
+            feature = self.vgg16(batch.cuda())
             features.append(feature.cpu().data.numpy())
 
         return np.concatenate(features, axis=0)
+    
     def extract_features(self, images):
         """
         Extract features of vgg16-fc2 for all images
@@ -159,9 +170,7 @@ class IPR():
             end = start + self.batch_size
             batch = images[start:end]
             batch = resize(batch)
-            before_fc = self.vgg16.module.features(batch.cuda())
-            before_fc = before_fc.view(-1, 7 * 7 * 512)
-            feature = self.vgg16.module.classifier[:4](before_fc)
+            feature = self.vgg16(batch.cuda())
             features.append(feature.cpu().data.numpy())
 
         return np.concatenate(features, axis=0)
@@ -190,7 +199,7 @@ class IPR():
         return np.concatenate(features, axis=0)
 
     def save_ref(self, fname):
-        logging.info('saving manifold to', fname, '...')
+        print('saving manifold to', fname, '...')
         np.savez_compressed(fname,
                             feature=self.manifold_ref.features,
                             radii=self.manifold_ref.radii)
