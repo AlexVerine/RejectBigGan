@@ -906,7 +906,11 @@ def write_metadata(logs_root, experiment_name, config, state_dict):
     writefile.write('config: %s\n' % str(config))
     writefile.write('state: %s\n' %str(state_dict))
 
-
+# Write some metadata to the logs directory
+def write_evaldata(logs_root, experiment_name, config, state_dict):
+  with open(('%s/%s/evalog.txt' % 
+             (logs_root, experiment_name)), 'w') as writefile:
+    writefile.write(str(state_dict))
 """
 Very basic progress indicator to wrap an iterable in.
 

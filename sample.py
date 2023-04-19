@@ -158,7 +158,7 @@ def run_sampler(config):
   # Prepare a simple function get metrics that we use for trunc curves
   def get_metrics():
     sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)    
-    Ps, Rs = get_pr_curve(sample,state_dict['itr'] )
+    Ps, Rs = get_pr_curve(sample, "eval")
 
     IS_mean, IS_std, FID = get_inception_metrics(sample, config['num_inception_images'], 
                                                  num_splits=10, 
@@ -178,6 +178,8 @@ def run_sampler(config):
     outstring += '\nItr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID)
     outstring += '\nItr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100)
     outstring += '\nItr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100)
+    utils.write_evaldata(config['logs_root'], experiment_name, config, 
+                         {'itr': state_dict['itr'], 'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Rs':Rs, 'Ps':Ps})
 
     logging.info(outstring)
   if config['sample_inception_metrics']: 

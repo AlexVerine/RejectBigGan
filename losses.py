@@ -39,7 +39,7 @@ class pr_loss_dis(torch.nn.Module):
     # print(f'\nBefore {dis_fake.min():.2f}/{dis_fake.max():.2f}, {dis_real.min():.2f}/{dis_real.max():.2f}')
 
     dis_fake = torch.clamp(dis_fake, min=0)
-    dis_real = torch.clamp(dis_real, max=self.l)
+    # dis_real = torch.clamp(dis_real, max=self.l )
     # print(f'After {dis_fake.mean():.2f} ({dis_fake.min():.2f}/{dis_fake.max():.2f}),  {dis_real.mean():.2f} ({dis_real.min():.2f}/{dis_real.max():.2f})')
 
     loss_real = -torch.mean(dis_real)
@@ -52,7 +52,7 @@ class pr_loss_gen(torch.nn.Module):
     self.l = config['lambda']
     
   def forward(self, dis_fake):
-    dis_fake = torch.clamp(dis_fake, min=0)
+    dis_fake = torch.clamp(dis_fake, max=self.l)
 
     loss_fake = -torch.mean(dis_fake/self.l)
     return loss_fake
@@ -60,21 +60,26 @@ class pr_loss_gen(torch.nn.Module):
 
 
 def rkl_loss_dis(dis_fake, dis_real):
+  # print(f'\nBefore {dis_fake.min():.2f}/{dis_fake.max():.2f}, {dis_real.min():.2f}/{dis_real.max():.2f}')
+
   dis_fake = -torch.exp(-dis_fake/10)
   dis_real = -torch.exp(-dis_real/10)
-  dis_fake = torch.clamp(dis_fake, min=-10)
+  dis_fake = torch.clamp(dis_fake, min=-5)
+  # print(f'After {dis_fake.mean():.2f} ({dis_fake.min():.2f}/{dis_fake.max():.2f}),  {dis_real.mean():.2f} ({dis_real.min():.2f}/{dis_real.max():.2f})')
 
   loss_real = -torch.mean(dis_real)
   loss_fake = torch.mean(-1 - torch.log(-dis_fake +1e-3))
   return loss_real, loss_fake
 
 def rkl_loss_gen(dis_fake):
-  dis_fake = torch.clamp(dis_fake, min=-10)
+  dis_fake = -torch.exp(-dis_fake/10)
+  # dis_fake = torch.clamp(dis_fake,)
   loss_fake = -torch.mean(-1 - torch.log(-dis_fake +1e-3))
   return loss_fake
 
 
 def kl_loss_dis(dis_fake, dis_real):
+  dis_fake = torch.clamp(dis_fake, max=10)
   loss_real = -torch.mean(dis_real)
   loss_fake = torch.mean(torch.exp(dis_fake-1))
   return loss_real, loss_fake
@@ -121,7 +126,7 @@ class PRLoss(nn.Module):
     return a
 
   def alpha(self, pqr, pqf, lbd):
-    a = torch.clamp(lbd*pqf, max=1)*0.5 +torch.clamp(1/pqr, max=lbd)*0.5
+    a = torch.clamp(lbd*pqf, max=1)*0.5 + torch.clamp(1/pqr, max=lbd)*0.5
     return a.mean()
 
   def beta_train(self, pqr, pqf, lbd):
@@ -136,8 +141,7 @@ class PRLoss(nn.Module):
   def forward(self, Dxr, Dxf):
     pqr = self.rate(Dxr)
     pqf = self.rate(Dxf)
-
-    loss = - self.alpha_train(pqr, pqf, self.l)*0.5 - self.beta_train(pqr, pqf, self.l)*0.5
+    loss = - self.alpha(pqr, pqf, self.l)*0.5 - self.beta(pqr, pqf, self.l)*0.5
     return loss
 
 def rate(config):
