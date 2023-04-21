@@ -139,13 +139,21 @@ def run(config):
                   * config['num_D_accumulations'])
   loaders = utils.get_data_loaders(**{**config, 'batch_size': D_batch_size,
                                       'start_itr': state_dict['itr']})
-  config['total_itr'] = (config['num_epochs']-state_dict['epoch'])*len(loaders[0])
-  config['log_itr'] = [i*(len(loaders[0])//5) for i in range(5)]+[len(loaders[0])-1]
+  if config['use_multiepoch_sampler']:
+    size_loader = loaders[0].sampler.num_samples
+  else:
+    size_loader = len(loaders[0])
+  config['total_itr'] = (size_loader)*(config['num_epochs']-state_dict['epoch'])
+
+  if (size_loader//5)<500:
+    config['log_itr'] = [i*(size_loader//5) for i in range(5)]+[size_loader-1]
+  else:
+    config['log_itr'] =  [size_loader-1]
   # Prepare inception metrics: FID and IS
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'], config['parallel'], config['no_fid'])
   #Prepare vgg metrics: Precision and Recall
   get_pr_metric = precision_recall_kyn_utils.prepare_pr_metrics(config)
-  get_pr_curve = precision_recall_simon_utils.prepare_pr_curve(config)
+  # get_pr_curve = precision_recall_simon_utils.prepare_pr_curve(config)
   # Prepare noise and randomly sampled label arrays
   # Allow for different batch sizes in G
   G_batch_size = max(config['G_batch_size'], config['batch_size'])
@@ -199,10 +207,10 @@ def run(config):
 
       # If using my progbar, print metrics.
      
-      if i in config["log_itr"]:
-        
-          logging.info(f'[{epoch:d}/{config["num_epochs"]:d}]({i+1}/{len(loaders[0])})({int(time.time()-t0):d}s/{int((len(loaders[0])-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] } ')
-          logging.info('\t'+', '.join(['%s : %+4.3f' % (key, metrics[key])
+      if i in config["log_itr"] or i%250 == 0:
+        e = 1+ i//size_loader if config['use_multiepoch_sampler'] else epoch
+        logging.info(f'[{e:d}/{config["num_epochs"]:d}]({i+1}/{size_loader//config["batch_size"]})({int(time.time()-t0):d}s/{int((size_loader//config["batch_size"]-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] } ')
+        logging.info('\t'+', '.join(['%s : %+4.3f' % (key, metrics[key])
                            for key in metrics]))
           # logging.info()
           # logging.info(', '.join(['itr: %d' % state_dict['itr']] 
@@ -224,7 +232,7 @@ def run(config):
           logging.info('Switchin G to eval mode...')
           G.eval()
         train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
-                       get_inception_metrics, get_pr_metric, get_pr_curve, experiment_name, test_log)
+                       get_inception_metrics, get_pr_metric, experiment_name, test_log)
         logging.info(f';\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
               + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) / 3600:2.1f} hours.')
     # Increment epoch counter at end of epoch

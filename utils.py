@@ -334,10 +334,10 @@ def prepare_parser():
     '--which_train_fn', type=str, default='GAN',
     help='How2trainyourbois (default: %(default)s)')  
   parser.add_argument(
-    '--which_loss', type=str, default='div',
+    '--which_loss', type=str, default='vanilla',
     help='Whichlossprecedure (default: %(default)s)', choices=['vanilla', 'div', 'PR']) 
   parser.add_argument(
-    '--which_div', type=str, default='chi2',
+    '--which_div', type=str, default='Chi2',
     help='Whichlossprecedure (default: %(default)s)', choices=['Chi2', 'KL', 'rKL', 'pr']) 
   parser.add_argument(
     '--lambda', type=float, default=1.0,
@@ -434,10 +434,6 @@ def add_cluster_parser(parser):
                       action='store_true')
   parser.add_argument("--qos", type=str, default="qos_gpu-t3",
                       help="Choose Quality of Service for slurm job.")
-  parser.add_argument("--local", action='store_true',
-                      help="Execute with local machine instead of slurm.")
-  parser.add_argument("--debug", action="store_true",
-                      help="Activate debug mode.")
   parser.add_argument("--account", type=str, default='yxj', choices=['yxj', 'esq'], 
                       help="Idris account")
   parser.add_argument("--local", action='store_true',
@@ -777,13 +773,13 @@ def save_weights(G, D, state_dict, weights_root, experiment_name,
 def load_weights(G, D, state_dict, weights_root, experiment_name, 
                  name_suffix=None, G_ema=None, strict=True, load_optim=True):
   root = '/'.join([weights_root, experiment_name])
-
-  root = '/'.join([weights_root, experiment_name])
+  logging.info(root)
   if not os.path.exists(root):
-    os.mkdir(root)
-    base_root = '/'.join([weights_root, 'basemodels'])
-    load_weights(G, D, state_dict, base_root, experiment_name, 
+
+    logging.info(f'Loading Basemodels Weights  from basemodels.')
+    load_weights(G, D, state_dict, weights_root, 'basemodels', 
                  None, G_ema, strict, load_optim)
+    os.mkdir(root)
     save_weights(G, D, state_dict, weights_root, experiment_name, 
                  name_suffix, G_ema)
     
@@ -809,7 +805,10 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
         torch.load('%s/%s.pth' % (root, join_strings('_', ['D_optim', name_suffix]))))
   # Load state dict
   for item in state_dict:
-    state_dict[item] = torch.load('%s/%s.pth' % (root, join_strings('_', ['state_dict', name_suffix])))[item]
+    try:
+      state_dict[item] = torch.load('%s/%s.pth' % (root, join_strings('_', ['state_dict', name_suffix])))[item]
+    except:
+      state_dict[item] = 0
   if G_ema is not None:
     G_ema.load_state_dict(
       torch.load('%s/%s.pth' % (root, join_strings('_', ['G_ema', name_suffix]))),

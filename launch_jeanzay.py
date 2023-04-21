@@ -13,10 +13,12 @@ def main():
 
     config = vars(parser.parse_args())
     if config['debug']:
-        config['experiment_name'] = 'folder_debug'
+        experiment_name ='folder_debug'
+        config['experiment_name'] = experiment_name
     else:
         experiment_name = (config['experiment_name'] if config['experiment_name']
             else name_from_config(config))
+        config['experiment_name'] = experiment_name
     print('Experiment name is %s' % experiment_name)
     
     prepare_root(config)
@@ -26,11 +28,12 @@ def main():
     config['cmd'] = f"python3 {' '.join(sys.argv)}"
     
     # cluster gpu memory constraint
-    if config['mem_constraint']:
+    if config['mem_constraint'] is not None:
         config['mem_constraint'] = f"v100-{config['mem_constraint']}g"
+        print(f'Mem Constraint : {config["mem_constraint"]}')
 
     if config['partition'] == "gpu_p5":
-        config['slurm_account'] = "yxj@a100"
+        config['slurm_account'] = "esq@a100"
         config['mem_constraint'] = 'a100'
     else:
         config['slurm_account'] = "yxj@v100"
@@ -66,7 +69,7 @@ def main():
         cpus_per_task=config['cpus_per_task'],
         stderr_to_stdout=True,
         slurm_account=config['slurm_account'],
-        slurm_job_name=f"{config['which_loss']}_{config['div']}",
+        slurm_job_name=f"{config['which_loss']}_{config['which_div']}",
         slurm_partition=config['partition'],
         slurm_qos=config['qos'],
         slurm_constraint=config['mem_constraint'],
@@ -80,3 +83,5 @@ def main():
     else:
         job = executor.submit(run_sampler, config)
     
+if __name__ == '__main__':
+  main()

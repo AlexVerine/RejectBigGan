@@ -174,7 +174,7 @@ def save_and_sample(G, D, G_ema, z_, y_, fixed_z, fixed_y,
     user-specified), logs the results, and saves a best_ copy if it's an 
     improvement. '''
 def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
-         get_pr_metric, get_pr_curve, experiment_name, test_log):
+         get_pr_metric, experiment_name, test_log):
   if config['accumulate_stats']:
     utils.accumulate_standing_stats(G_ema if config['ema'] and config['use_ema'] else G,
                            z_, y_, config['n_classes'],
@@ -183,11 +183,11 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
                                                config['num_inception_images'],
                                                num_splits=10)
   P, R = get_pr_metric(sample)
-  Ps, Rs = get_pr_curve(sample, state_dict['itr'])
+  # Ps, Rs = get_pr_curve(sample, state_dict['itr'])
 
   logging.info('Itr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID))
   logging.info('Itr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100))
-  logging.info('Itr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100))
+  # logging.info('Itr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100))
 
 
   # If improved over previous best metric, save approrpiate copy
