@@ -209,7 +209,7 @@ def run(config):
      
       if i in config["log_itr"] or i%250 == 0:
         e = 1+ i//size_loader if config['use_multiepoch_sampler'] else epoch
-        logging.info(f'[{e:d}/{config["num_epochs"]:d}]({i+1}/{size_loader//config["batch_size"]})({int(time.time()-t0):d}s/{int((size_loader//config["batch_size"]-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] } ')
+        logging.info(f'[{e:d}/{config["num_epochs"]:d}]({i+1}/{size_loader})({int(time.time()-t0):d}s/{int((size_loader-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] } ')
         logging.info('\t'+', '.join(['%s : %+4.3f' % (key, metrics[key])
                            for key in metrics]))
           # logging.info()
@@ -233,7 +233,7 @@ def run(config):
           G.eval()
         train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
                        get_inception_metrics, get_pr_metric, experiment_name, test_log)
-        logging.info(f';\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
+        logging.info(f'\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
               + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) / 3600:2.1f} hours.')
     # Increment epoch counter at end of epoch
     state_dict['epoch'] += 1

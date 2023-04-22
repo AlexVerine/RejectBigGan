@@ -22,7 +22,7 @@ def prepare_parser():
   parser = ArgumentParser(description=usage)
   parser.add_argument(
     '--dataset', type=str, default='I128',
-    help='Which Dataset to train on, out of I128, I256, C10, C100;'
+    help='Which Dataset to train on, out of I128, I256, C10, C100, CA64, CA256'
          'Append "_hdf5" to use the hdf5 version for ISLVRC (default: %(default)s)')
   parser.add_argument(
     '--data_root', type=str, default=None,
@@ -74,8 +74,9 @@ def run(config):
   # 1000 / None                78/s
   # 5000 / None                81/s
   # auto:(125,1,16,32) / None                         11/s                  61GB        
+  name = utils.name_dset[f'{config["dataset"]}_hdf5']
 
-  print('Starting to load %s into an HDF5 file with chunk size %i and compression %s...' % (config['dataset'], config['chunk_size'], config['compression']))
+  print('Starting to load %s into an HDF5 file with chunk size %i and compression %s into %s...' % (config['dataset'], config['chunk_size'], config['compression'], name))
   # Loop over train loader
   for i,(x,y) in enumerate(tqdm(train_loader)):
     # Stick X into the range [0, 255] since it's coming from the train loader
@@ -84,7 +85,7 @@ def run(config):
     y = y.numpy()
     # If we're on the first batch, prepare the hdf5
     if i==0:
-      with h5.File(config['data_dir'] + '/ILSVRC%i.hdf5' % config['image_size'], 'w') as f:
+      with h5.File(config['data_dir'] + '/'+name, 'w') as f:
         print('Producing dataset of len %d' % len(train_loader.dataset))
         imgs_dset = f.create_dataset('imgs', x.shape,dtype='uint8', maxshape=(len(train_loader.dataset), 3, config['image_size'], config['image_size']),
                                      chunks=(config['chunk_size'], 3, config['image_size'], config['image_size']), compression=config['compression']) 
@@ -95,7 +96,7 @@ def run(config):
         labels_dset[...] = y
     # Else append to the hdf5
     else:
-      with h5.File(config['data_dir'] + '/ILSVRC%i.hdf5' % config['image_size'], 'a') as f:
+      with h5.File(config['data_dir'] + '/'+name, 'a') as f:
         f['imgs'].resize(f['imgs'].shape[0] + x.shape[0], axis=0)
         f['imgs'][-x.shape[0]:] = x
         f['labels'].resize(f['labels'].shape[0] + y.shape[0], axis=0)

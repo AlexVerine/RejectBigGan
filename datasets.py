@@ -4,6 +4,7 @@
 import os
 import os.path
 import sys
+import pandas as pd
 from PIL import Image
 import numpy as np
 from tqdm import tqdm, trange
@@ -239,6 +240,64 @@ class ILSVRC_HDF5(data.Dataset):
       return self.num_imgs
       # return len(self.f['imgs'])
 
+class CelebA_HDF5(data.Dataset):
+  def __init__(self, root, transform=None, target_transform=None,
+               load_in_mem=False, train=True,download=False, validate_seed=0,
+               val_split=0, **kwargs): # last four are dummies
+      
+    self.root = root
+    self.num_imgs = len(h5.File(root, 'r')['labels'])
+    
+    # self.transform = transform
+    self.target_transform = target_transform   
+    
+    # Set the transform here
+    self.transform = transform
+    
+    # load the entire dataset into memory? 
+    self.load_in_mem = load_in_mem
+    
+    # If loading into memory, do so now
+    if self.load_in_mem:
+      logging.info('Loading %s into memory...' % root)
+      with h5.File(root,'r') as f:
+        self.data = f['imgs'][:]
+        self.labels = f['labels'][:]
+
+  def __getitem__(self, index):
+    """
+    Args:
+        index (int): Index
+
+    Returns:
+        tuple: (image, target) where target is class_index of the target class.
+    """
+    # If loaded the entire dataset in RAM, get image from memory
+    if self.load_in_mem:
+      img = self.data[index]
+      target = self.labels[index]
+    
+    # Else load it from disk
+    else:
+      with h5.File(self.root,'r') as f:
+        img = f['imgs'][index]
+        target = f['labels'][index]
+    
+   
+    # if self.transform is not None:
+        # img = self.transform(img)
+    # Apply my own transform
+    img = ((torch.from_numpy(img).float() / 255) - 0.5) * 2
+    
+    if self.target_transform is not None:
+      target = self.target_transform(target)
+    
+    return img, int(target)
+
+  def __len__(self):
+      return self.num_imgs
+      # return len(self.f['imgs'])
+
 import pickle
 class CIFAR10(dset.CIFAR10):
 
@@ -360,3 +419,172 @@ class CIFAR100(CIFAR10):
     test_list = [
         ['test', 'f0ef6b0ae62326f3e7ffdfab6717acfc'],
     ]
+
+
+
+class CelebA(data.Dataset):
+  """
+  The CelebA dataset of
+  (Liu et al., 2015): https://arxiv.org/abs/1411.7766
+  preprocessed to 64x64 as in
+  (Larsen et al. 2016): https://arxiv.org/abs/1512.09300
+  (Dinh et al., 2017): https://arxiv.org/abs/1605.08803
+
+  From https://github.com/laurent-dinh/models/blob/master/real_nvp/celeba_formatting.py:
+  "
+  Download img_align_celeba.zip from
+  http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html under the
+  link "Align&Cropped Images" in the "Img" directory and list_eval_partition.txt
+  under the link "Train/Val/Test Partitions" in the "Eval" directory.Then do:
+  unzip img_align_celeba.zip
+  "
+
+  Subsequently, move the files img_align_celeba.zip and list_eval_partition.txt
+  into folder data/celeba/raw/
+  """
+  def __init__(self, root, transform=None, load_in_mem=True, **kwargs):
+    super().__init__()
+    split='train'
+    assert split in {'train','valid','test'}
+    self.raw_folder = 'raw'
+    self.processed_folder = 'processed'
+    self.root = root
+    self.split = split
+    self.transform = transform
+    
+    if not self._check_raw():
+      raise RuntimeError('Dataset not found.\n\nFrom docstring:\n\n' + self.__doc__)
+
+    if not self._check_processed():
+      logging.info('here')
+      self.process()
+      
+      
+    if self.split=='train':
+      self.data = pd.read_csv(os.path.join(self.processed_data_folder, 'train.txt'), header=None)
+      self.img_dir = self.processed_train_folder
+    elif self.split=='valid':
+      self.data = pd.read_csv(os.path.join(self.processed_data_folder, 'valid.txt'), header=None)
+      self.img_dir = self.processed_valid_folder
+    elif self.split=='test':
+      self.data = pd.read_csv(os.path.join(self.processed_data_folder, 'test.txt'), header=None)
+      self.img_dir = self.processed_test_folder
+
+
+  def __getitem__(self, idx):
+    """
+    Args:
+    index (int): Index
+    Returns:
+    tensor: image
+    """
+
+    if torch.is_tensor(idx):
+      idx = idx.tolist()
+    img_path = os.path.join(self.img_dir, self.data.iloc[idx, 0])
+    img = Image.open(img_path)
+    if self.transform is not None:
+      img = self.transform(img)
+    return img, 0
+
+  def __len__(self):
+    return len(self.data)
+
+  @property
+  def raw_data_folder(self):
+    return os.path.join(self.root, self.raw_folder)
+
+  @property
+  def raw_zip_file(self):
+    return os.path.join(self.raw_data_folder, 'img_align_celeba.zip')
+
+  @property
+  def raw_txt_file(self):
+    return os.path.join(self.raw_data_folder, 'list_eval_partition.txt')
+
+  def _check_raw(self):
+    return os.path.exists(self.raw_zip_file) and os.path.exists(self.raw_txt_file)
+
+  @property
+  def processed_data_folder(self):
+    return os.path.join(self.root, self.processed_folder)
+
+  @property
+  def processed_train_folder(self):
+    return os.path.join(self.processed_data_folder, 'train')
+
+  @property
+  def processed_valid_folder(self):
+    return os.path.join(self.processed_data_folder, 'valid')
+
+  @property
+  def processed_test_folder(self):
+    return os.path.join(self.processed_data_folder, 'test')
+
+  def _check_processed(self):
+    return os.path.exists(self.processed_train_folder) and os.path.exists(self.processed_valid_folder) and os.path.exists(self.processed_test_folder)
+
+  def process_file_list(self, zipfile_object, file_list, processed_filename):
+        
+    with open(processed_filename+'.txt', 'w') as f:
+      for i, jpg_file in enumerate(file_list):
+  
+        if (i+1)%1000 == 0:
+          logging.info(f'File  {i+1}/{len(file_list)}\r')
+  
+        ## Read file
+        img_bytes = zipfile_object.read('img_align_celeba/' + jpg_file)
+        img = Image.open(io.BytesIO(img_bytes))
+  
+        ## Crop image
+        # Coordinates taken from Line 981 in
+        # https://github.com/laurent-dinh/models/blob/master/real_nvp/real_nvp_multiscale_dataset.py
+        # Coordinates of upper left corner: (40, 15)
+        # Size of cropped image: (148, 148)
+        cropped_img = crop(img, 40, 15, 148, 148)
+        
+        ## Resize image
+        # Resizing taken from Line 995-996 in
+        # https://github.com/laurent-dinh/models/blob/master/real_nvp/real_nvp_multiscale_dataset.py
+        resized_img = resize(img, size=(64,64), interpolation=Image.BILINEAR)
+        
+        name = f'image{i}.jpg'
+        f.write(name+'\n')
+        resized_img.save(processed_filename+'/'+name, quality=100)
+
+
+  def process(self):
+
+    logging.info("Reading filenames...")
+    train_files = []
+    valid_files = []
+    test_files = []
+    for line in open(self.raw_txt_file, 'r'):
+      a, b = line.split()
+      if b=='0':
+        train_files.append(a)
+      elif b=='1':
+        valid_files.append(a)
+      elif b=='2':
+        test_files.append(a)
+
+    logging.info("Reading zip file...")
+    zip = zipfile.ZipFile(self.raw_zip_file, 'r')
+
+    if not os.path.exists(self.processed_data_folder):
+      os.mkdir(self.processed_data_folder)
+      os.mkdir(self.processed_train_folder)
+      os.mkdir(self.processed_valid_folder)
+      os.mkdir(self.processed_test_folder)
+
+    logging.info("Preparing training data...")
+    self.process_file_list(zipfile_object=zip, file_list=train_files, processed_filename=self.processed_train_folder)
+
+    logging.info("Preparing validation data...")
+    self.process_file_list(zipfile_object=zip, file_list=valid_files, processed_filename=self.processed_valid_folder)
+
+    logging.info("Preparing test data...")
+    self.process_file_list(zipfile_object=zip, file_list=test_files, processed_filename=self.processed_test_folder)
+
+    zip.close()
+
