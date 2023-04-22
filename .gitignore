@@ -10,4 +10,5 @@ __pycache__/
 trained_models/
 samples/
 logs/.ipynb_checkpoints/
+logs/Big*/
 
