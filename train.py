@@ -140,7 +140,7 @@ def run(config):
   loaders = utils.get_data_loaders(**{**config, 'batch_size': D_batch_size,
                                       'start_itr': state_dict['itr']})
   if config['use_multiepoch_sampler']:
-    size_loader = loaders[0].sampler.num_samples
+    size_loader = np.ceil(loaders[0].sampler.num_samples/config['batch_size'])
   else:
     size_loader = len(loaders[0])
   config['total_itr'] = (size_loader)*(config['num_epochs']-state_dict['epoch'])

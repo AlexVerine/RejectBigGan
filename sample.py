@@ -140,14 +140,16 @@ def run_sampler(config):
                          fix_z=fix_z, fix_y=fix_y, device='cuda')
   # Sample random sheet
   if config['sample_random']:
+    batch_sample = 100
     # logging.info('Preparing random sample sheet...')
     loaders = utils.get_data_loaders(**{**config, 'batch_size': config['batch_size'] ,
                                       'start_itr': state_dict['itr']})
     
     images, labels = sample()    
+    images = images[:batch_sample]
     torchvision.utils.save_image(images.float(),
                                  '%s/%s/random_samples.jpg' % (config['samples_root'], experiment_name),
-                                 nrow=int(G_batch_size**0.5),
+                                 nrow=int(batch_sample**0.5),
                                  normalize=True)
 
   # Get Inception Score and FID
