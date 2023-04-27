@@ -85,6 +85,7 @@ def kl_loss_dis(dis_fake, dis_real):
   return loss_real, loss_fake
 
 def kl_loss_gen(dis_fake):
+  dis_fake = torch.clamp(dis_fake, max=10)
   loss_fake = -torch.mean(torch.exp(dis_fake-1))
   return loss_fake
 
