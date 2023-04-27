@@ -34,7 +34,7 @@ def prepare_parser():
     '--batch_size', type=int, default=256,
     help='Default overall batchsize (default: %(default)s)')
   parser.add_argument(
-    '--num_workers', type=int, default=16,
+    '--num_workers', type=int, default=4,
     help='Number of dataloader workers (default: %(default)s)')
   parser.add_argument(
     '--chunk_size', type=int, default=500,

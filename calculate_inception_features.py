@@ -57,7 +57,6 @@ def run(config):
   imgs = []
   with torch.no_grad():
     for i, (x, _) in enumerate(tqdm(loaders[0])):
-      x = x.to(device)
           
       for j in range(x.size(0)):
         if total >= config['num_pr_images']:

@@ -51,24 +51,21 @@ def run(config):
   config['drop_last'] = False
   loaders = utils.get_data_loaders(**config)
 
-  
   device = 'cuda'
   total = 0
-  imgs = []
+  imgs = [] 
   with torch.no_grad():
     for i, (x, _) in enumerate(tqdm(loaders[0])):
-      x = x.to(device)
-          
       for j in range(x.size(0)):
         if total >= config['num_pr_images']:
           continue
         imgs.append(x[j:j+1, :, :, :])
         total +=1
-  print(imgs[0].shape)
-  print(f'Evaluating {len(imgs)} images with vgg.')
-  ipr = precision_recall_kyn_utils.IPR(batch_size=64, k=3, num_samples=config['num_pr_images'], model=None)
+    print(imgs[0].shape)
+    print(f'Evaluating {len(imgs)} images with vgg.')
+    ipr = precision_recall_kyn_utils.IPR(batch_size=64, k=3, num_samples=config['num_pr_images'], model=None)
 
-  ipr.compute_manifold_ref(imgs)
+    ipr.compute_manifold_ref(imgs)
   ipr.save_ref('samples/features/'+config['dataset'].strip('_hdf5')+'_vgg_features.npz')
 
 

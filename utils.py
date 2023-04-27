@@ -452,35 +452,47 @@ dset_dict = {'I32': dset.ImageFolder, 'I64': dset.ImageFolder,
              'I128_hdf5': dset.ILSVRC_HDF5, 'I256_hdf5': dset.ILSVRC_HDF5,
              'C10': dset.CIFAR10, 'C100': dset.CIFAR100,
              'CA64': dset.CelebA, 'CA64_hdf5': dset.CelebA_HDF5,
-             'CA256': dset.CelebA, 'CA256_hdf5': dset.CelebA_HDF5}
+             'CA256': dset.FFHQ, 'CA256_hdf5': dset.CelebA_HDF5,
+             'LSB': torchvision.datasets.LSUN, 'LSB_hdf5': dset.CelebA_HDF5,
+             'LSC': torchvision.datasets.LSUN, 'LSC_hdf5': dset.CelebA_HDF5}
+
 imsize_dict = {'I32': 32, 'I32_hdf5': 32,
                'I64': 64, 'I64_hdf5': 64,
                'I128': 128, 'I128_hdf5': 128,
                'I256': 256, 'I256_hdf5': 256,
                'C10': 32, 'C100': 32,
                'CA64': 64, 'CA64_hdf5': 64,
-               'CA256': 256, 'CA256_hdf5': 256}
+               'CA256': 256, 'CA256_hdf5': 256,
+               'LSB': 256, 'LSB_hdf5': 256,
+               'LSC': 256, 'LSC_hdf5': 256}
+
 root_dict = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
              'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
              'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
              'C10': 'cifar', 'C100': 'cifar',
              'CA64': 'celeba', 'CA64_hdf5': 'celeba64.hdf5',
-             'CA256': 'celaba', 'CA256_hdf5': 'celeba256.hdf5'}
+             'CA256': 'ffhq', 'CA256_hdf5': 'celeba256.hdf5',
+             'LSB': 'lsun', 'LSB_hdf5': 'lsunbedroom.hdf5',
+             'LSC': 'lsun', 'LSC_hdf5': 'lsuncat.hdf5'}
 name_dset = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
              'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
              'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
              'C10': 'cifar10', 'C100': 'cifar100',
              'CA64': 'celeba', 'CA64_hdf5': 'celeba64.hdf5',
-             'CA256': 'celeba', 'CA256_hdf5':'celeba256.hdf5'}
+             'CA256': 'ffhq', 'CA256_hdf5':'celeba256.hdf5',
+             'LSB': 'lsun', 'LSB_hdf5': 'lsunbedroom.hdf5',
+             'LSC': 'lsun', 'LSC_hdf5': 'lsuncat.hdf5'}
 nclass_dict = {'I32': 1000, 'I32_hdf5': 1000,
                'I64': 1000, 'I64_hdf5': 1000,
                'I128': 1000, 'I128_hdf5': 1000,
                'I256': 1000, 'I256_hdf5': 1000,
                'C10': 10, 'C100': 100, 
                'CA64': 1, 'CA64_hdf5': 1,
-               'CA256': 1, 'CA256_hdf5': 1}
+               'CA256': 1, 'CA256_hdf5': 1,
+               'LSB': 1, 'LSB_hdf5': 1,
+               'LSC': 1, 'LSC_hdf5': 1}
 # Number of classes to put per sample sheet               
 classes_per_sheet_dict = {'I32': 50, 'I32_hdf5': 50,
                           'I64': 50, 'I64_hdf5': 50,
@@ -488,7 +500,9 @@ classes_per_sheet_dict = {'I32': 50, 'I32_hdf5': 50,
                           'I256': 20, 'I256_hdf5': 20,
                           'C10': 10, 'C100': 100,
                           'CA64': 1, 'CA64_hdf5': 1,
-                          'CA256': 1, 'CA256_hdf5': 1}
+                          'CA256': 1, 'CA256_hdf5': 1,
+                          'LSB': 1, 'LSB_hdf5': 1,
+                          'LSC': 1, 'LSC_hdf5': 1}
 activation_dict = {'inplace_relu': nn.ReLU(inplace=True),
                    'relu': nn.ReLU(inplace=False),
                    'ir': nn.ReLU(inplace=True),}
@@ -565,12 +579,19 @@ class MultiEpochSampler(torch.utils.data.Sampler):
     # Determine number of epochs
     num_epochs = int(np.ceil((n * self.num_epochs 
                               - (self.start_itr * self.batch_size)) / float(n)))
+    
+    logging.info(n)
+    logging.info(self.num_epochs)
+    logging.info(num_epochs)
     # Sample all the indices, and then grab the last num_epochs index sets;
     # This ensures if we're starting at epoch 4, we're still grabbing epoch 4's
     # indices
     out = [torch.randperm(n) for epoch in range(self.num_epochs)][-num_epochs:]
     # Ignore the first start_itr % n indices of the first epoch
+    logging.info(len(out))
+    logging.info(len(out[0]))
     out[0] = out[0][(self.start_itr * self.batch_size % n):]
+  
     # if self.replacement:
       # return iter(torch.randint(high=n, size=(self.num_samples,), dtype=torch.int64).tolist())
     # return iter(.tolist())
@@ -636,8 +657,13 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
     train_transform = transforms.Compose(train_transform + [
                      transforms.ToTensor(),
                      transforms.Normalize(norm_mean, norm_std)])
-  train_set = which_dataset(root=data_root, transform=train_transform,
-                            load_in_mem=load_in_mem, **dataset_kwargs)
+  if dataset in ['LSB', 'LSC']:
+    classes = ['bedroom_train'] if dataset == 'LSB' else 'cat_train'
+    train_set = which_dataset(root=data_root, transform=train_transform,
+                           classes=classes)
+  else:
+    train_set = which_dataset(root=data_root, transform=train_transform,
+                          load_in_mem=load_in_mem, **dataset_kwargs)
 
   # Prepare loader; the loaders list is for forward compatibility with
   # using validation / test splits.

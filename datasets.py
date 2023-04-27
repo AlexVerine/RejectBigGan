@@ -588,3 +588,30 @@ class CelebA(data.Dataset):
 
     zip.close()
 
+
+
+
+class FFHQ(data.Dataset):
+  """ Flickr-Faces-HQ (FFHQ)
+  https://github.com/NVlabs/ffhq-dataset
+  """
+  def __init__(self, root, transform=None, load_in_mem=True, **kwargs):
+    super(FFHQ, self).__init__()
+    self.root = root
+    self.image_list = self._get_image_list()
+    self.transform = transform
+
+  def _get_image_list(self):
+    image_list = ['{:05d}.png'.format(i) for i in range(70000)]
+    return image_list
+
+  def __len__(self):
+      return len(self.image_list)
+
+  def __getitem__(self, index):
+    image = Image.open(os.path.join(self.root, self.image_list[index]))
+    if self.transform is not None:
+      image = self.transform(image)
+    return image, 0
+
+

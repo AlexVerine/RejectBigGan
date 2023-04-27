@@ -138,13 +138,14 @@ class IPR():
             def resize(x): return x
 
         features = []
-        for bi in range(num_batches):
-            start = bi * self.batch_size
-            end = start + self.batch_size
-            batch , _ = sample()
-            batch = resize(batch)
-            feature = self.vgg16(batch.cuda())
-            features.append(feature.cpu().data.numpy())
+        with torch.no_grad():
+          for bi in range(num_batches):
+              start = bi * self.batch_size
+              end = start + self.batch_size
+              batch , _ = sample()
+              batch = resize(batch)
+              feature = self.vgg16(batch.cuda())
+              features.append(feature.cpu().data.numpy())
 
         return np.concatenate(features, axis=0)
     
@@ -165,13 +166,14 @@ class IPR():
             def resize(x): return x
 
         features = []
-        for bi in range(num_batches):
-            start = bi * self.batch_size
-            end = start + self.batch_size
-            batch = images[start:end]
-            batch = resize(batch)
-            feature = self.vgg16(batch.cuda())
-            features.append(feature.cpu().data.numpy())
+        with torch.no_grad():
+          for bi in range(num_batches):
+              start = bi * self.batch_size
+              end = start + self.batch_size
+              batch = images[start:end]
+              batch = resize(batch)
+              feature = self.vgg16(batch.cuda())
+              features.append(feature.cpu().data.numpy())
 
         return np.concatenate(features, axis=0)
 
