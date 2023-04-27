@@ -140,10 +140,10 @@ def run(config):
   loaders = utils.get_data_loaders(**{**config, 'batch_size': D_batch_size,
                                       'start_itr': state_dict['itr']})
   if config['use_multiepoch_sampler']:
-    size_loader = np.ceil(loaders[0].sampler.num_samples/config['batch_size'])
+    size_loader = int(np.ceil(loaders[0].sampler.num_samples/D_batch_size))
   else:
     size_loader = len(loaders[0])
-  config['total_itr'] = (size_loader)*(config['num_epochs']-state_dict['epoch'])
+  config['total_itr'] = int((size_loader)*(config['num_epochs']-state_dict['epoch']))
 
   if (size_loader//5)<500:
     config['log_itr'] = [i*(size_loader//5) for i in range(5)]+[size_loader-1]
@@ -209,7 +209,9 @@ def run(config):
      
       if i in config["log_itr"] or i%250 == 0:
         e = 1+ i//size_loader if config['use_multiepoch_sampler'] else epoch
-        logging.info(f'[{e:d}/{config["num_epochs"]:d}]({i+1}/{size_loader})({int(time.time()-t0):d}s/{int((size_loader-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] } ')
+        logging.info(f'[{e:d}/{config["num_epochs"]:d}]({i+1}/{size_loader})({int(time.time()-t0):d}s/{int((size_loader-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] }     '+ 'Mem used (Go) {:.2f}/{:.2f}'.format(torch.cuda.mem_get_info(0)[1]/1024**3
+                       -torch.cuda.mem_get_info(0)[0]/1024**3, torch.cuda.mem_get_info(0)[1]/1024**3))
+
         logging.info('\t'+', '.join(['%s : %+4.3f' % (key, metrics[key])
                            for key in metrics]))
           # logging.info()

@@ -69,7 +69,7 @@ def main():
         cpus_per_task=config['cpus_per_task'],
         stderr_to_stdout=True,
         slurm_account=config['slurm_account'],
-        slurm_job_name=f"{config['which_loss']}_{config['which_div']}",
+        slurm_job_name=f"{config['dataset']}{config['which_loss'][:2]}",
         slurm_partition=config['partition'],
         slurm_qos=config['qos'],
         slurm_constraint=config['mem_constraint'],
