@@ -240,7 +240,7 @@ def prepare_parser():
     help='Number of samples to compute inception metrics with '
          '(default: %(default)s)')
   parser.add_argument(
-    '--num_pr_images', type=int, default=10000,
+    '--num_pr_images', type=int, default=50000,
     help='Number of samples to compute vgg metrics with '
          '(default: %(default)s)')
   parser.add_argument(

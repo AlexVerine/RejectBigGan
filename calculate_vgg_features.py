@@ -33,7 +33,7 @@ def prepare_parser():
     '--augment', action='store_true', default=False,
     help='Augment with random crops and flips (default: %(default)s)')
   parser.add_argument(
-    '--num_pr_images', type=int, default=10000,
+    '--num_pr_images', type=int, default=50000,
     help='Default number of image to compute  (default: %(default)s)')
   parser.add_argument(
     '--num_workers', type=int, default=8,

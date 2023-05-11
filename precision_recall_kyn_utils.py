@@ -193,9 +193,7 @@ class IPR():
 
         features = []
         for batch in dataloader:
-            before_fc = self.vgg16.module.features(batch.cuda())
-            before_fc = before_fc.view(-1, 7 * 7 * 512)
-            feature = self.vgg16.module.classifier[:4](before_fc)
+            feature = self.vgg16(batch.cuda())
             features.append(feature.cpu().data.numpy())
 
         return np.concatenate(features, axis=0)
