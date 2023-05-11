@@ -350,7 +350,9 @@ def prepare_parser():
   parser.add_argument(
     '--resume', action='store_true', default=False,
     help='Resume training? (default: %(default)s)')
-  
+  parser.add_argument(
+    '--resume_no_optim', action='store_true', default=False,
+    help='Resume training and reset optim ? (default: %(default)s)')
   ### Log stuff ###
   parser.add_argument(
     '--logstyle', type=str, default='%3.3e',
@@ -580,16 +582,11 @@ class MultiEpochSampler(torch.utils.data.Sampler):
     num_epochs = int(np.ceil((n * self.num_epochs 
                               - (self.start_itr * self.batch_size)) / float(n)))
     
-    logging.info(n)
-    logging.info(self.num_epochs)
-    logging.info(num_epochs)
     # Sample all the indices, and then grab the last num_epochs index sets;
     # This ensures if we're starting at epoch 4, we're still grabbing epoch 4's
     # indices
     out = [torch.randperm(n) for epoch in range(self.num_epochs)][-num_epochs:]
     # Ignore the first start_itr % n indices of the first epoch
-    logging.info(len(out))
-    logging.info(len(out[0]))
     out[0] = out[0][(self.start_itr * self.batch_size % n):]
   
     # if self.replacement:
@@ -816,7 +813,14 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
   if not os.path.exists(root):
 
     logging.info(f'Loading Basemodels Weights  from basemodels.')
-    load_weights(G, D, state_dict, weights_root, 'basemodels', 
+    if "I64" in experiment_name:
+      load_weights(G, D, state_dict, weights_root, 'basemodels/I64', 
+                 None, G_ema, strict, load_optim)
+    elif "I128" in experiment_name:
+      load_weights(G, D, state_dict, weights_root, 'basemodels/I128', 
+                 None, G_ema, strict, load_optim)
+    elif "CA256" in experiment_name:
+      load_weights(G, D, state_dict, weights_root, 'basemodels/CA256', 
                  None, G_ema, strict, load_optim)
     os.mkdir(root)
     save_weights(G, D, state_dict, weights_root, experiment_name, 

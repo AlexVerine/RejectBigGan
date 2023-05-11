@@ -62,7 +62,7 @@ if __name__ == '__main__':
         sys.exit(0)
 
   elif args.partition == 'gpu_p5':
-    args.account = 'yxj@a100'
+    args.account = 'esq@a100'
     args.constraint = 'a100'
     args.ngpus = 8
 
