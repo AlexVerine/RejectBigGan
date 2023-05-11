@@ -20,7 +20,7 @@ def dummy_training_function():
 def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
   generator_loss, discriminator_loss = losses.load_loss(config)
   discriminator_rate = losses.rate(config)
-  def train(x, y):
+  def train(x, y, train_G=True):
     G.optim.zero_grad()
     D.optim.zero_grad()
     # How many chunks to split x and y into?
@@ -63,35 +63,37 @@ def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
     if config['toggle_grads']:
       utils.toggle_grad(D, False)
       utils.toggle_grad(G, True)
+       
+    G_loss = torch.tensor([0.]).cuda()
+    if train_G:
+      # Zero G's gradients by default before training G, for safety
+      G.optim.zero_grad()
+      counter = 0
       
-    # Zero G's gradients by default before training G, for safety
-    G.optim.zero_grad()
-    counter = 0
-
-    # If accumulating gradients, loop multiple times
-    for accumulation_index in range(config['num_G_accumulations']):    
-      z_.sample_()
-      y_.sample_()
-      if config['which_loss'] != 'PR':
-        D_fake = GD(z_, y_, train_G=True, split_D=config['split_D'])
-        G_loss = generator_loss(D_fake) / float(config['num_G_accumulations'])
-        G_loss.backward()
-      else:
-        D_fake, D_real = GD(z_[:config['batch_size']], y_[:config['batch_size']], 
-                      x[counter], y[counter], train_G=True, 
-                      split_D=config['split_D'])
-        G_loss = generator_loss(D_real, D_fake)
-        G_loss = G_loss / float(config['num_G_accumulations'])
-        G_loss.backward()
-        counter += 1
-    # Optionally apply modified ortho reg in G
-    if config['G_ortho'] > 0.0:
-      logging.info('using modified ortho reg in G') # Debug print to indicate we're using ortho reg in G
-      # Don't ortho reg shared, it makes no sense. Really we should blacklist any embeddings for this
-      utils.ortho(G, config['G_ortho'], 
-                  blacklist=[param for param in G.shared.parameters()])
-    G.optim.step()
-    
+      # If accumulating gradients, loop multiple times
+      for accumulation_index in range(config['num_G_accumulations']):    
+        z_.sample_()
+        y_.sample_()
+        if config['which_loss'] != 'PR':
+          D_fake = GD(z_, y_, train_G=True, split_D=config['split_D'])
+          G_loss = generator_loss(D_fake) / float(config['num_G_accumulations'])
+          G_loss.backward()
+        else:
+          D_fake, D_real = GD(z_[:config['batch_size']], y_[:config['batch_size']], 
+                        x[counter], y[counter], train_G=True, 
+                        split_D=config['split_D'])
+          G_loss = generator_loss(D_real, D_fake)
+          G_loss = G_loss / float(config['num_G_accumulations'])
+          G_loss.backward()
+          counter += 1
+      # Optionally apply modified ortho reg in G
+      if config['G_ortho'] > 0.0:
+        logging.info('using modified ortho reg in G') # Debug print to indicate we're using ortho reg in G
+        # Don't ortho reg shared, it makes no sense. Really we should blacklist any embeddings for this
+        utils.ortho(G, config['G_ortho'], 
+                    blacklist=[param for param in G.shared.parameters()])
+      G.optim.step()
+      
     # If we have an ema, update it, regardless of if we test with it or not
     if config['ema']:
       ema.update(state_dict['itr'])

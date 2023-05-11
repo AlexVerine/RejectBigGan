@@ -70,6 +70,7 @@ def run(config):
 
   utils.setup_logging(config)
   logging.info('Experiment name is %s' % experiment_name)
+  config['resume'] += config['resume_no_optim']
 
   # Next, build the model
   G = model.Generator(**config).to(device)
@@ -109,7 +110,9 @@ def run(config):
     utils.load_weights(G, D, state_dict,
                        config['weights_root'], experiment_name, 
                        config['load_weights'] if config['load_weights'] else None,
-                       G_ema if config['ema'] else None)
+                       G_ema if config['ema'] else None, 
+                      load_optim=not config['resume_no_optim'])
+    logging.info(f"Resume training with lrD: {D.optim.param_groups[0]['lr']:e} and lrG: {G.optim.param_groups[0]['lr']:e}")
 
   # If parallel, parallelize the GD module
   if config['parallel']:
@@ -185,6 +188,9 @@ def run(config):
     # Which progressbar to use? TQDM or my own
     t0 = time.time()
     for i, (x, y) in enumerate(loaders[0]):
+      if i % size_loader  == 0 :
+        t0 = time.time()
+
       # Increment the iteration counter
       state_dict['itr'] += 1
       # Make sure G and D are in training mode, just in case they got set to eval
@@ -197,7 +203,7 @@ def run(config):
         x, y = x.to(device).half(), y.to(device)
       else:
         x, y = x.to(device), y.to(device)
-      metrics = train(x, y)
+      metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']))
       train_log.log(itr=int(state_dict['itr']), **metrics)
       
       # Every sv_log_interval, log singular values
@@ -206,10 +212,10 @@ def run(config):
                       **{**utils.get_SVs(G, 'G'), **utils.get_SVs(D, 'D')})
 
       # If using my progbar, print metrics.
-     
       if i in config["log_itr"] or i%250 == 0:
         e = 1+ i//size_loader if config['use_multiepoch_sampler'] else epoch
-        logging.info(f'[{e:d}/{config["num_epochs"]:d}]({i+1}/{size_loader})({int(time.time()-t0):d}s/{int((size_loader-i-1)*(time.time()-t0)/(i+1)):d}s) : {state_dict["itr"] }     '+ 'Mem used (Go) {:.2f}/{:.2f}'.format(torch.cuda.mem_get_info(0)[1]/1024**3
+
+        logging.info(f'[{e:d}/{config["num_epochs"]:d}]({i+1}/{size_loader})({int(time.time()-t0):d}s/{int((size_loader -i%size_loader)*(time.time()-t0)/(i%size_loader+1)):d}s) : {state_dict["itr"] }     '+ 'Mem used (Go) {:.2f}/{:.2f}'.format(torch.cuda.mem_get_info(0)[1]/1024**3
                        -torch.cuda.mem_get_info(0)[0]/1024**3, torch.cuda.mem_get_info(0)[1]/1024**3))
 
         logging.info('\t'+', '.join(['%s : %+4.3f' % (key, metrics[key])
@@ -220,6 +226,7 @@ def run(config):
           #                  for key in metrics]))
       # Save weights and copies as configured at specified interval
       if not (state_dict['itr'] % config['save_every']):
+  #
         if config['G_eval_mode']:
           logging.info('Switchin G to eval mode...')
           G.eval()
