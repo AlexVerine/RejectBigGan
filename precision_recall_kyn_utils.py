@@ -114,8 +114,8 @@ class IPR():
         else:
             logging.info(type(input))
             raise TypeError
-
         # radii
+        # logging.info(feats.shape)
         distances = compute_pairwise_distances(feats)
         radii = distances2radii(distances, k=self.k)
         return Manifold(feats, radii)
@@ -143,6 +143,7 @@ class IPR():
               start = bi * self.batch_size
               end = start + self.batch_size
               batch , _ = sample()
+              batch = batch[:self.batch_size]
               batch = resize(batch)
               feature = self.vgg16(batch.cuda())
               features.append(feature.cpu().data.numpy())
@@ -216,6 +217,7 @@ def compute_pairwise_distances(X, Y=None):
         N x N symmetric np.array
     '''
     num_X = X.shape[0]
+    # logging.info(num_X)
     if Y is None:
         num_Y = num_X
     else:
@@ -359,7 +361,7 @@ def prepare_pr_metrics(config):
                 'Make sure you have launched calculate_vgg_features.py before ! '
                      )
 
-    ipr = IPR(batch_size=64, k=3, num_samples=config['num_pr_images'], model=None)
+    ipr = IPR(batch_size=100, k=3, num_samples=config['num_pr_images'], model=None)
     ipr.compute_manifold_ref('samples/features/'+config['dataset'].strip('_hdf5')+'_vgg_features.npz')
 
     def get_pr_metrics(sample, prints=False):
