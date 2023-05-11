@@ -36,7 +36,7 @@ def main():
         config['slurm_account'] = "esq@a100"
         config['mem_constraint'] = 'a100'
     else:
-        config['slurm_account'] = "yxj@v100"
+        config['slurm_account'] = "esq@v100"
     if config['ngpus'] is None:
         if config['partition'] == "gpu_p5" or config['partition'] == "gpu_p2":
             config['ngpus'] = 8
