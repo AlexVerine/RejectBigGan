@@ -83,7 +83,9 @@ class IPR():
         '''
         # features
         if isinstance(input, str):
-            if input.endswith('.npz'):  # input is precalculated file
+            if input.endswith('samples.npz'):
+                feats = self.extract_features_from_npz(input)
+            elif input.endswith('.npz'):  # input is precalculated file
                 f = np.load(input)
                 feats = f['feature']
                 radii = f['radii']
@@ -171,12 +173,48 @@ class IPR():
               start = bi * self.batch_size
               end = start + self.batch_size
               batch = images[start:end]
+       
               batch = resize(batch)
+
+
               feature = self.vgg16(batch.cuda())
               features.append(feature.cpu().data.numpy())
 
         return np.concatenate(features, axis=0)
+    
+    def extract_features_from_npz(self, images):
+        """
+        Extract features of vgg16-fc2 for all images
+        params:
+            images: torch.Tensors of size N x C x H x W
+        returns:
+            A numpy array of dimension (num images, dims)
+        """
+        images = torch.Tensor(np.load(images)['imgs'])
+        images = images[:10000]
+        print(images.shape)
+        desc = 'extracting features of %d images' % images.size(0)
+        num_batches = int(np.ceil(images.size(0) / self.batch_size))
+        _, _, height, width = images.shape
+        if height != 224 or width != 224:
+            resize = partial(F.interpolate, size=(224, 224))
+        else:
+            def resize(x): return x
 
+        features = []
+        with torch.no_grad():
+          for bi in range(num_batches):
+              start = bi * self.batch_size
+              end = start + self.batch_size
+              batch = images[start:end]
+       
+              batch = resize(batch)
+
+
+              feature = self.vgg16(batch.cuda())
+              features.append(feature.cpu().data.numpy())
+
+        return np.concatenate(features, axis=0)
     def extract_features_from_files(self, path_or_fnames):
         """
         Extract features of vgg16-fc2 for all images in path
@@ -190,9 +228,18 @@ class IPR():
         num_found_images = len(dataloader.dataset)
         if num_found_images < self.num_samples:
             logging.info('WARNING: num_found_images(%d) < num_samples(%d)' % (num_found_images, self.num_samples))
-
+        resize = partial(F.interpolate, size=(224, 224))
         features = []
         for batch in dataloader:
+ 
+            print(batch.min(), batch.max())
+            print(batch.mean())            
+
+            print(batch.shape)
+            batch = resize(batch)
+            print(batch.min(), batch.max())
+            print(batch.mean())            
+
             feature = self.vgg16(batch.cuda())
             features.append(feature.cpu().data.numpy())
 
@@ -286,7 +333,7 @@ def realism(manifold_real, feat_subject):
     max_realism = float(ratios.max())
     return max_realism
 
-
+  
 class ImageFolder(Dataset):
     def __init__(self, root, transform=None):
         # self.fnames = list(map(lambda x: os.path.join(root, x), os.listdir(root)))
@@ -298,8 +345,9 @@ class ImageFolder(Dataset):
     def __getitem__(self, index):
         image_path = self.fnames[index]
         image = Image.open(image_path).convert('RGB')
-        if self.transform is not None:
+        if self.transform is not None:   
             image = self.transform(image)
+        print(f'ap {torch.mean(image):.2f}, {torch.min(image):.2f}, {torch.max(image):.2f}')
         return image
 
     def __len__(self):
@@ -322,12 +370,16 @@ class FileNames(Dataset):
         return len(self.fnames)
 
 
-def get_custom_loader(image_dir_or_fnames, image_size=224, batch_size=50, num_workers=4, num_samples=-1):
+def get_custom_loader(image_dir_or_fnames, image_size=224, batch_size=64, num_workers=4, num_samples=-1):
+    norm_mean = [0.5,0.5,0.5]
+    norm_std = [0.5,0.5,0.5]
     transform = []
     transform.append(transforms.Resize([image_size, image_size]))
     transform.append(transforms.ToTensor())
-    transform.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                          std=[0.229, 0.224, 0.225]))
+    # transform.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    #                                       std=[0.229, 0.224, 0.225]))
+    # transform.append(transforms.Normalize(mean=norm_mean,
+    #                                       std=norm_std))
     transform = transforms.Compose(transform)
 
     if isinstance(image_dir_or_fnames, list):

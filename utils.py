@@ -240,7 +240,7 @@ def prepare_parser():
     help='Number of samples to compute inception metrics with '
          '(default: %(default)s)')
   parser.add_argument(
-    '--num_pr_images', type=int, default=50000,
+    '--num_pr_images', type=int, default=10000,
     help='Number of samples to compute vgg metrics with '
          '(default: %(default)s)')
   parser.add_argument(
@@ -448,7 +448,8 @@ def add_cluster_parser(parser):
 
 
 # Convenience dicts
-dset_dict = {'I32': dset.ImageFolder, 'I64': dset.ImageFolder, 
+dset_dict = { 'M': torchvision.datasets.MNIST, 'FM': torchvision.datasets.FashionMNIST, 
+             'I32': dset.ImageFolder, 'I64': dset.ImageFolder, 
              'I128': dset.ImageFolder, 'I256': dset.ImageFolder,
              'I32_hdf5': dset.ILSVRC_HDF5, 'I64_hdf5': dset.ILSVRC_HDF5, 
              'I128_hdf5': dset.ILSVRC_HDF5, 'I256_hdf5': dset.ILSVRC_HDF5,
@@ -458,7 +459,8 @@ dset_dict = {'I32': dset.ImageFolder, 'I64': dset.ImageFolder,
              'LSB': torchvision.datasets.LSUN, 'LSB_hdf5': dset.CelebA_HDF5,
              'LSC': torchvision.datasets.LSUN, 'LSC_hdf5': dset.CelebA_HDF5}
 
-imsize_dict = {'I32': 32, 'I32_hdf5': 32,
+imsize_dict = {'M':28, 'FM':28,
+               'I32': 32, 'I32_hdf5': 32,
                'I64': 64, 'I64_hdf5': 64,
                'I128': 128, 'I128_hdf5': 128,
                'I256': 256, 'I256_hdf5': 256,
@@ -468,7 +470,8 @@ imsize_dict = {'I32': 32, 'I32_hdf5': 32,
                'LSB': 256, 'LSB_hdf5': 256,
                'LSC': 256, 'LSC_hdf5': 256}
 
-root_dict = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
+root_dict = {'M':'MNIST', 'FM':'FashionMNIST',
+             'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
              'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
              'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
@@ -477,7 +480,8 @@ root_dict = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'CA256': 'ffhq', 'CA256_hdf5': 'celeba256.hdf5',
              'LSB': 'lsun', 'LSB_hdf5': 'lsunbedroom.hdf5',
              'LSC': 'lsun', 'LSC_hdf5': 'lsuncat.hdf5'}
-name_dset = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
+name_dset = {'M':'mnist', 'FM':'fashionmnist',
+             'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
              'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
              'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
@@ -486,7 +490,8 @@ name_dset = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'CA256': 'ffhq', 'CA256_hdf5':'celeba256.hdf5',
              'LSB': 'lsun', 'LSB_hdf5': 'lsunbedroom.hdf5',
              'LSC': 'lsun', 'LSC_hdf5': 'lsuncat.hdf5'}
-nclass_dict = {'I32': 1000, 'I32_hdf5': 1000,
+nclass_dict = {'M': 10, 'FM': 10,
+               'I32': 1000, 'I32_hdf5': 1000,
                'I64': 1000, 'I64_hdf5': 1000,
                'I128': 1000, 'I128_hdf5': 1000,
                'I256': 1000, 'I256_hdf5': 1000,
@@ -496,7 +501,8 @@ nclass_dict = {'I32': 1000, 'I32_hdf5': 1000,
                'LSB': 1, 'LSB_hdf5': 1,
                'LSC': 1, 'LSC_hdf5': 1}
 # Number of classes to put per sample sheet               
-classes_per_sheet_dict = {'I32': 50, 'I32_hdf5': 50,
+classes_per_sheet_dict = {'M': 10, 'FM': 10,
+                          'I32': 50, 'I32_hdf5': 50,
                           'I64': 50, 'I64_hdf5': 50,
                           'I128': 20, 'I128_hdf5': 20,
                           'I256': 20, 'I256_hdf5': 20,
@@ -648,6 +654,9 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
       logging.info('Data will not be augmented...')
       if dataset in ['C10', 'C100']:
         train_transform = []
+      elif dataset in ['M', 'FM']:
+        train_transform = [
+                           transforms.Grayscale(num_output_channels=3)]
       else:
         train_transform = [CenterCropLongEdge(), transforms.Resize(image_size)]
       # train_transform = [transforms.Resize(image_size), transforms.CenterCrop]
@@ -658,6 +667,8 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
     classes = ['bedroom_train'] if dataset == 'LSB' else 'cat_train'
     train_set = which_dataset(root=data_root, transform=train_transform,
                            classes=classes)
+  elif dataset in ['M', 'FM']:
+    train_set = which_dataset(root=data_root, transform=train_transform)
   else:
     train_set = which_dataset(root=data_root, transform=train_transform,
                           load_in_mem=load_in_mem, **dataset_kwargs)

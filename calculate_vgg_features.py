@@ -33,7 +33,7 @@ def prepare_parser():
     '--augment', action='store_true', default=False,
     help='Augment with random crops and flips (default: %(default)s)')
   parser.add_argument(
-    '--num_pr_images', type=int, default=50000,
+    '--num_pr_images', type=int, default=10000,
     help='Default number of image to compute  (default: %(default)s)')
   parser.add_argument(
     '--num_workers', type=int, default=8,
@@ -56,6 +56,8 @@ def run(config):
   imgs = [] 
   with torch.no_grad():
     for i, (x, _) in enumerate(tqdm(loaders[0])):
+      print(f'ap {torch.mean(x):.2f}, {torch.min(x):.2f}, {torch.max(x):.2f}')
+
       for j in range(x.size(0)):
         if total >= config['num_pr_images']:
           continue

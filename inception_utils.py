@@ -243,10 +243,27 @@ def calculate_inception_score(pred, num_splits=10):
   return np.mean(scores), np.std(scores)
 
 
+def accumulate_inception_activations_from_file(sample, net, num_inception_images=50000):
+  
+  dataloader = get_custom_loader(path_or_fnames, batch_size=self.batch_size, num_samples=self.num_ince)
+  num_found_images = len(dataloader.dataset)
+  if num_found_images < self.num_samples:
+    logging.info('WARNING: num_found_images(%d) < num_samples(%d)' % (num_found_images, self.num_samples))
+  pool, logits, labels = [], [], []
+  while (torch.cat(logits, 0).shape[0] if len(logits) else 0) < num_inception_images:
+    with torch.no_grad():
+      images, labels_val = sample()
+      pool_val, logits_val = net(images.float())
+      pool += [pool_val]
+      logits += [F.softmax(logits_val, 1)]
+      labels += [labels_val]
+  return torch.cat(pool, 0), torch.cat(logits, 0), torch.cat(labels, 0)
+
 # Loop and run the sampler and the net until it accumulates num_inception_images
 # activations. Return the pool, the logits, and the labels (if one wants 
 # Inception Accuracy the labels of the generated class will be needed)
 def accumulate_inception_activations(sample, net, num_inception_images=50000):
+  
   pool, logits, labels = [], [], []
   while (torch.cat(logits, 0).shape[0] if len(logits) else 0) < num_inception_images:
     with torch.no_grad():
@@ -285,7 +302,10 @@ def prepare_inception_metrics(dataset, parallel, no_fid=False):
                             prints=False, use_torch=True):
     if prints:
       logging.info('Gathering activations...')
-    pool, logits, labels = accumulate_inception_activations(sample, net, num_inception_images)
+    if isinstance(sample, str):
+        print('cool')
+    else:
+        pool, logits, labels = accumulate_inception_activations(sample, net, num_inception_images)
     if prints:  
       logging.info('Calculating Inception Score...')
     IS_mean, IS_std = calculate_inception_score(logits.cpu().numpy(), num_splits)
