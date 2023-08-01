@@ -51,18 +51,29 @@ def run(config):
                      'about to overwrite! Override this error only if you know '
                      'what you''re doing!')
   # Get image size
-  config['image_size'] = utils.imsize_dict[config['dataset']]
+  config['image_size'] = utils.imsize_dict[config['dataset'].replace("_eval", '')]
 
   # Update compression entry
   config['compression'] = 'lzf' if config['compression'] else None #No compression; can also use 'lzf' 
 
   # Get dataset
   kwargs = {'num_workers': config['num_workers'], 'pin_memory': False, 'drop_last': False}
+  print(config['dataset'])
+
+  if "eval" in config['dataset']:
+    config['mode'] = "sample"
+    name = utils.name_dset[f'{config["dataset"].replace("_eval", "")}_hdf5'][:-5]+"_eval.hdf5"
+  else:
+    name = utils.name_dset[f'{config["dataset"]}_hdf5']
+    config['mode'] = "train"
+
+  print(name)
   train_loader = utils.get_data_loaders(dataset=config['dataset'],
                                         batch_size=config['batch_size'],
                                         shuffle=False,
                                         data_root=config['data_root'],
                                         use_multiepoch_sampler=False,
+                                        mode=config['mode'],
                                         **kwargs)[0]     
 
   # HDF5 supports chunking and compression. You may want to experiment 
@@ -73,8 +84,8 @@ def run(config):
   # 500 / LZF                                         8/s                   56GB                  23min
   # 1000 / None                78/s
   # 5000 / None                81/s
-  # auto:(125,1,16,32) / None                         11/s                  61GB        
-  name = utils.name_dset[f'{config["dataset"]}_hdf5']
+  # auto:(125,1,16,32) / None                         11/s                  61GB     
+
 
   print('Starting to load %s into an HDF5 file with chunk size %i and compression %s into %s...' % (config['dataset'], config['chunk_size'], config['compression'], name))
   # Loop over train loader
@@ -94,6 +105,7 @@ def run(config):
         labels_dset = f.create_dataset('labels', y.shape, dtype='int64', maxshape=(len(train_loader.dataset),), chunks=(config['chunk_size'],), compression=config['compression'])
         print('Label chunks chosen as ' + str(labels_dset.chunks))
         labels_dset[...] = y
+
     # Else append to the hdf5
     else:
       with h5.File(config['data_dir'] + '/'+name, 'a') as f:

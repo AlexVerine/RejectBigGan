@@ -240,7 +240,7 @@ def prepare_parser():
     help='Number of samples to compute inception metrics with '
          '(default: %(default)s)')
   parser.add_argument(
-    '--num_pr_images', type=int, default=50000,
+    '--num_pr_images', type=int, default=10000,
     help='Number of samples to compute vgg metrics with '
          '(default: %(default)s)')
   parser.add_argument(
@@ -374,6 +374,15 @@ def prepare_parser():
     help='Iteration interval for logging singular values '
          ' (default: %(default)s)') 
    
+
+   ##Sapmpling Stuff
+  parser.add_argument('--sampling', type=str, default=None, 
+                       choices=['OBRS', "DRS"])
+  parser.add_argument("--budget", type=float, default=None, help='Minimum acceptance rate')
+  parser.add_argument('--drs', default=False, action='store_true')
+  parser.add_argument('--gamma_drs', type=float, default=0)
+  parser.add_argument('--eps_drs', type=float, default=1e-3)
+  
   return parser
 
 # Arguments for sample.py; not presently used in train.py
@@ -416,6 +425,10 @@ def add_sample_parser(parser):
     '--sample_num_samples_PR',type=int, default=10000,
     help='Number of images to sample to compute the PR curves '
          '(default: %(default)s)')
+  parser.add_argument(
+    '--batch_size_eval',type=int, default=2048,
+    help='Number of images to sample to compute the PR curves '
+         '(default: %(default)s)')
   
   
   return parser
@@ -445,66 +458,94 @@ def add_cluster_parser(parser):
   parser.add_argument("--mode", default="train", choices=['train', 'sample'])
   return parser
 
-
-
 # Convenience dicts
-dset_dict = {'I32': dset.ImageFolder, 'I64': dset.ImageFolder, 
+dset_dict = {'M': torchvision.datasets.MNIST, 'FM': torchvision.datasets.FashionMNIST, 
+             'I32': dset.ImageFolder, 'I64': dset.ImageFolder, 
              'I128': dset.ImageFolder, 'I256': dset.ImageFolder,
              'I32_hdf5': dset.ILSVRC_HDF5, 'I64_hdf5': dset.ILSVRC_HDF5, 
              'I128_hdf5': dset.ILSVRC_HDF5, 'I256_hdf5': dset.ILSVRC_HDF5,
              'C10': dset.CIFAR10, 'C100': dset.CIFAR100,
+             'C10_hdf5': dset.ILSVRC_HDF5, 'C100_hdf5': dset.ILSVRC_HDF5,
              'CA64': dset.CelebA, 'CA64_hdf5': dset.CelebA_HDF5,
+             'CA64_denseflow':  dset.ImageFolder, 'CA64_hdf5': dset.CelebA_HDF5,
              'CA256': dset.FFHQ, 'CA256_hdf5': dset.CelebA_HDF5,
              'LSB': torchvision.datasets.LSUN, 'LSB_hdf5': dset.CelebA_HDF5,
-             'LSC': torchvision.datasets.LSUN, 'LSC_hdf5': dset.CelebA_HDF5}
+             'LSC': torchvision.datasets.LSUN, 'LSC_hdf5': dset.CelebA_HDF5,
+             'C10_styleganxl':dset.ImageFolder,'C10_styleganxl_hdf5':dset.ILSVRC_HDF5
+             }
 
-imsize_dict = {'I32': 32, 'I32_hdf5': 32,
+imsize_dict = {'M':28, 'FM':28,
+               'I32': 32, 'I32_hdf5': 32,
                'I64': 64, 'I64_hdf5': 64,
                'I128': 128, 'I128_hdf5': 128,
                'I256': 256, 'I256_hdf5': 256,
                'C10': 32, 'C100': 32,
+               'C10_hdf5': 32, 'C100_hdf5': 32,
+               'C10_styleganxl': 32,'C10_styleganxl_hdf5': 32,
                'CA64': 64, 'CA64_hdf5': 64,
+               'CA64_denseflow': 64, 'CA64_denseflow_hdf5': 64,
                'CA256': 256, 'CA256_hdf5': 256,
                'LSB': 256, 'LSB_hdf5': 256,
                'LSC': 256, 'LSC_hdf5': 256}
 
-root_dict = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
+root_dict = {'M':'MNIST', 'FM':'FashionMNIST',
+             'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
              'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
              'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
              'C10': 'cifar', 'C100': 'cifar',
+             'C10_hdf5': 'cifar10.hdf5', 'C100_hdf5': 'cifar100.hdf5',
+             'C10_styleganxl': 'cifar10_styleganxl','C10_styleganxl_hdf5': 'cifar10_styleganxl.hdf5',
+             'C10_styleganxl_eval': 'cifar10_styleganxl_eval','C10_styleganxl_eval_hdf5': 'cifar10_styleganxl_eval.hdf5',
              'CA64': 'celeba', 'CA64_hdf5': 'celeba64.hdf5',
+             'CA64_denseflow': 'CA64_denseflow', 'CA64_denseflow_hdf5': 'celeba64_denseflow.hdf5',
              'CA256': 'ffhq', 'CA256_hdf5': 'celeba256.hdf5',
              'LSB': 'lsun', 'LSB_hdf5': 'lsunbedroom.hdf5',
              'LSC': 'lsun', 'LSC_hdf5': 'lsuncat.hdf5'}
-name_dset = {'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
+
+name_dset = {'M':'mnist', 'FM':'fashionmnist',
+             'I32': 'imagenet', 'I32_hdf5': 'ILSVRC32.hdf5',
              'I64': 'imagenet', 'I64_hdf5': 'ILSVRC64.hdf5',
              'I128': 'imagenet', 'I128_hdf5': 'ILSVRC128.hdf5',
              'I256': 'imagenet', 'I256_hdf5': 'ILSVRC256.hdf5',
              'C10': 'cifar10', 'C100': 'cifar100',
+             'C10_hdf5': 'cifar10.hdf5', 'C100_hdf5': 'cifar100.hdf5',
+             'C10_styleganxl': 'cifar10_styleganxl','C10_styleganxl_hdf5': 'cifar10_styleganxl.hdf5',
+             'C10_styleganxl_eval': 'cifar10_styleganxl_eval','C10_styleganxl_eval_hdf5': 'cifar10_styleganxl_eval.hdf5',
              'CA64': 'celeba', 'CA64_hdf5': 'celeba64.hdf5',
+             'CA64_denseflow': 'CA64_denseflow', 'CA64_denseflow_hdf5': 'celeba64_denseflow.hdf5',
              'CA256': 'ffhq', 'CA256_hdf5':'celeba256.hdf5',
              'LSB': 'lsun', 'LSB_hdf5': 'lsunbedroom.hdf5',
              'LSC': 'lsun', 'LSC_hdf5': 'lsuncat.hdf5'}
-nclass_dict = {'I32': 1000, 'I32_hdf5': 1000,
+
+nclass_dict = {'M': 10, 'FM': 10,
+               'I32': 1000, 'I32_hdf5': 1000,
                'I64': 1000, 'I64_hdf5': 1000,
                'I128': 1000, 'I128_hdf5': 1000,
                'I256': 1000, 'I256_hdf5': 1000,
                'C10': 10, 'C100': 100, 
+               'C10_hdf5': 10, 'C100_hdf5': 100, 
+               'C10_styleganxl': 1,'C10_styleganxl_hdf5': 1,
                'CA64': 1, 'CA64_hdf5': 1,
+               'CA64_denseflow': 1, 'CA64_hdf5_denseflow': 1,
                'CA256': 1, 'CA256_hdf5': 1,
                'LSB': 1, 'LSB_hdf5': 1,
                'LSC': 1, 'LSC_hdf5': 1}
+
 # Number of classes to put per sample sheet               
-classes_per_sheet_dict = {'I32': 50, 'I32_hdf5': 50,
+classes_per_sheet_dict = {'M': 10, 'FM': 10,
+                          'I32': 50, 'I32_hdf5': 50,
                           'I64': 50, 'I64_hdf5': 50,
                           'I128': 20, 'I128_hdf5': 20,
                           'I256': 20, 'I256_hdf5': 20,
                           'C10': 10, 'C100': 100,
+                          'C10_hdf5': 10, 'C100_hdf5': 100,
                           'CA64': 1, 'CA64_hdf5': 1,
+                          'CA64_denseflow': 1, 'CA64_denseflow_hdf5': 1,
                           'CA256': 1, 'CA256_hdf5': 1,
                           'LSB': 1, 'LSB_hdf5': 1,
                           'LSC': 1, 'LSC_hdf5': 1}
+
 activation_dict = {'inplace_relu': nn.ReLU(inplace=True),
                    'relu': nn.ReLU(inplace=False),
                    'ir': nn.ReLU(inplace=True),}
@@ -603,7 +644,7 @@ def get_data_dir(data_root, dataset):
     paths = data_root.split(':')
     data_dir = None
     for path in paths:
-      if os.path.exists(os.path.join(path, name_dset[dataset])):
+      if os.path.exists(os.path.join(path, name_dset[dataset])) or os.path.islink(os.path.join(path, name_dset[dataset])):
         data_dir = path
         break
     if data_dir is None:
@@ -614,18 +655,18 @@ def get_data_dir(data_root, dataset):
 def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64, 
                      num_workers=8, shuffle=True, load_in_mem=False, hdf5=False,
                      pin_memory=True, drop_last=True, start_itr=0,
-                     num_epochs=500, use_multiepoch_sampler=False,
+                     num_epochs=500, use_multiepoch_sampler=False, mode='train',
                      **kwargs):
-  print(data_root)
+  data_root_init = data_root
   data_root = get_data_dir(data_root, dataset)
   # Append /FILENAME.hdf5 to root if using hdf5
-  data_root += '/%s' % root_dict[dataset]
+  data_root += '/%s' % root_dict[dataset.replace("_eval", '')]
   logging.info('Using dataset root location %s' % data_root)
 
-  which_dataset = dset_dict[dataset]
+  which_dataset = dset_dict[dataset.replace("_eval", '')]
   norm_mean = [0.5,0.5,0.5]
   norm_std = [0.5,0.5,0.5]
-  image_size = imsize_dict[dataset]
+  image_size = imsize_dict[dataset.replace("_eval", '')]
   # For image folder datasets, name of the file where we store the precomputed
   # image locations to avoid having to walk the dirs every time we load.
   dataset_kwargs = {'index_filename': '%s_imgs.npz' % dataset}
@@ -633,10 +674,14 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
   # HDF5 datasets have their own inbuilt transform, no need to train_transform  
   if 'hdf5' in dataset:
     train_transform = None
+    if mode == "sample":
+      data_root = data_root[:-5] + "_eval" + data_root[-5:]
   else:
+    if mode == "sample":
+      data_root = data_root +"_eval"
     if augment:
       logging.info('Data will be augmented...')
-      if dataset in ['C10', 'C100']:
+      if np.sum([d in dataset for d in ['C10', 'C100']]):
         train_transform = [transforms.RandomCrop(32, padding=4),
                            transforms.RandomHorizontalFlip()]
       else:
@@ -646,8 +691,11 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
         
     else:
       logging.info('Data will not be augmented...')
-      if dataset in ['C10', 'C100']:
+      if np.sum([d in dataset for d in ['C10', 'C100']]):
         train_transform = []
+      elif np.sum([d in dataset for d in ['M', 'FM']]):
+        train_transform = [
+                           transforms.Grayscale(num_output_channels=3)]
       else:
         train_transform = [CenterCropLongEdge(), transforms.Resize(image_size)]
       # train_transform = [transforms.Resize(image_size), transforms.CenterCrop]
@@ -658,6 +706,8 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
     classes = ['bedroom_train'] if dataset == 'LSB' else 'cat_train'
     train_set = which_dataset(root=data_root, transform=train_transform,
                            classes=classes)
+  elif np.sum([d in dataset for d in ['M', 'FM']]):
+    train_set = which_dataset(root=data_root, transform=train_transform)
   else:
     train_set = which_dataset(root=data_root, transform=train_transform,
                           load_in_mem=load_in_mem, **dataset_kwargs)
@@ -677,6 +727,15 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
     train_loader = DataLoader(train_set, batch_size=batch_size,
                               shuffle=shuffle, **loader_kwargs)
   loaders.append(train_loader)
+  if mode=='train':
+    if np.sum([m in dataset for m in ['styleganxl', 'adm', 'edm', 'denseflow']]):
+      if np.sum([d in dataset for d in ['M', 'FM', "C10", "C100"]]):
+        d = dataset.split('_')[0]
+      else:
+        d = dataset.split('_')[0]+'_hdf5'
+      loaders.append(get_data_loaders(d,data_root_init, augment, batch_size, num_workers, 
+                                      shuffle, load_in_mem, hdf5, pin_memory, drop_last, start_itr, num_epochs,
+                                      use_multiepoch_sampler)[0])
   return loaders
 
 
@@ -790,10 +849,11 @@ def save_weights(G, D, state_dict, weights_root, experiment_name,
     logging.info('Saving weights to %s/%s...' % (root, name_suffix))
   else:
     logging.info('Saving weights to %s...' % root)
-  torch.save(G.state_dict(), 
-              '%s/%s.pth' % (root, join_strings('_', ['G', name_suffix])))
-  torch.save(G.optim.state_dict(), 
-              '%s/%s.pth' % (root, join_strings('_', ['G_optim', name_suffix])))
+  if G is not None:
+    torch.save(G.state_dict(), 
+                '%s/%s.pth' % (root, join_strings('_', ['G', name_suffix])))
+    torch.save(G.optim.state_dict(), 
+                '%s/%s.pth' % (root, join_strings('_', ['G_optim', name_suffix])))
   torch.save(D.state_dict(), 
               '%s/%s.pth' % (root, join_strings('_', ['D', name_suffix])))
   torch.save(D.optim.state_dict(),
@@ -811,17 +871,19 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
   root = '/'.join([weights_root, experiment_name])
   logging.info(root)
   if not os.path.exists(root):
-
     logging.info(f'Loading Basemodels Weights  from basemodels.')
-    if "I64" in experiment_name:
+    if "C10" in experiment_name:
+      load_weights(G, D, state_dict, weights_root, 'basemodels/C10', 
+                 None, G_ema, False, load_optim)
+    elif "I64" in experiment_name:
       load_weights(G, D, state_dict, weights_root, 'basemodels/I64', 
-                 None, G_ema, strict, load_optim)
+                 None, G_ema, False, load_optim)
     elif "I128" in experiment_name:
       load_weights(G, D, state_dict, weights_root, 'basemodels/I128', 
-                 None, G_ema, strict, load_optim)
+                 None, G_ema, False, load_optim)
     elif "CA256" in experiment_name:
       load_weights(G, D, state_dict, weights_root, 'basemodels/CA256', 
-                 None, G_ema, strict, load_optim)
+                 None, G_ema, False, load_optim)
     os.mkdir(root)
     save_weights(G, D, state_dict, weights_root, experiment_name, 
                  name_suffix, G_ema)
@@ -840,18 +902,28 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
       G.optim.load_state_dict(
         torch.load('%s/%s.pth' % (root, join_strings('_', ['G_optim', name_suffix]))))
   if D is not None:
-    D.load_state_dict(
-      torch.load('%s/%s.pth' % (root, join_strings('_', ['D', name_suffix]))),
-      strict=strict)
+    try:
+      D.load_state_dict(
+        torch.load('%s/%s.pth' % (root, join_strings('_', ['D', name_suffix]))),
+        strict=strict)
+    except:
+      model_dict = torch.load('%s/%s.pth' % (root, join_strings('_', ['D', name_suffix])))
+      model_dict.pop('embed.weight')
+      model_dict.pop('embed.u0')
+      model_dict.pop('embed.sv0')
+
+      D.load_state_dict(model_dict,
+        strict=strict)
     if load_optim:
       D.optim.load_state_dict(
         torch.load('%s/%s.pth' % (root, join_strings('_', ['D_optim', name_suffix]))))
-  # Load state dict
-  for item in state_dict:
-    try:
-      state_dict[item] = torch.load('%s/%s.pth' % (root, join_strings('_', ['state_dict', name_suffix])))[item]
-    except:
-      state_dict[item] = 0
+  if state_dict is not None:
+    # Load state dict
+    for item in state_dict:
+      try:
+        state_dict[item] = torch.load('%s/%s.pth' % (root, join_strings('_', ['state_dict', name_suffix])))[item]
+      except:
+        state_dict[item] = 0
   if G_ema is not None:
     G_ema.load_state_dict(
       torch.load('%s/%s.pth' % (root, join_strings('_', ['G_ema', name_suffix]))),
@@ -951,8 +1023,8 @@ def write_metadata(logs_root, experiment_name, config, state_dict):
 # Write some metadata to the logs directory
 def write_evaldata(logs_root, experiment_name, config, state_dict):
   with open(('%s/%s/evalog.txt' % 
-             (logs_root, experiment_name)), 'w') as writefile:
-    writefile.write(str(state_dict))
+             (logs_root, experiment_name)), 'a') as writefile:
+    writefile.write(str(state_dict)+"\n")
 """
 Very basic progress indicator to wrap an iterable in.
 

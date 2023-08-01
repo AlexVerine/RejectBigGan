@@ -730,7 +730,8 @@ class PRCurves():
 # The iterator can return samples with a different batch size than used in
 # training, using the setting confg['inception_batchsize']
 def prepare_pr_curve(config):
-    path = 'samples/features/'+config['dataset'].strip('_hdf5')+'_inception_features.npy'
+    dset = config['dataset'].split('_')[0]
+    path = 'samples/features/'+dset+'_inception_features.npy'
     path_pr_curve = 'logs/'+config['experiment_name']+'/'
     assert os.path.exists(path), (
                 'Make sure you have launched calculate_inception_features.py before ! '

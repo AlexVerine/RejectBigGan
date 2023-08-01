@@ -91,7 +91,7 @@ def kl_loss_gen(dis_fake):
 
 def chi2_loss_dis(dis_fake, dis_real):
   dis_fake = torch.clamp(dis_fake, min=-2)
-  dis_real = torch.clamp(dis_real, max=5)
+  dis_real = torch.clamp(dis_real, max=20)
   loss_real = -torch.mean(dis_real)
   loss_fake = torch.mean((dis_fake**2)/4+dis_fake)
 
@@ -190,6 +190,23 @@ def load_loss(config):
       loss_dis = rkl_loss_dis
     return PRLoss(config), loss_dis
 
+
+  
+def pq_fun(config):
+  if config['which_div'] == "rKL":
+    def rate(Dx):
+      Dx = torch.clamp(Dx, max=0)
+      return -1/(-1e-3+Dx)
+    return rate
+  elif config['which_div'] == "KL":
+    def rate(Dx):
+      return torch.exp(Dx-1)
+    return rate 
+  elif config['which_div'] == "Chi2":
+    def rate(Dx):
+      Dx = torch.clamp(Dx, min=-2, max=20)+1e-3
+      return Dx/2+1
+    return rate
 # # # Default to hinge loss
 # # generator_loss = loss_hinge_gen
 # # discriminator_loss = loss_hinge_dis

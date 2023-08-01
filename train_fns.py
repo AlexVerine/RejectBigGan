@@ -3,6 +3,7 @@ Functions for the main loop of training different conditional image models
 '''
 import torch
 import torch.nn as nn
+import numpy as np
 import torchvision
 import os
 import logging
@@ -108,6 +109,119 @@ def GAN_training_function(G, D, GD, z_, y_, ema, state_dict, config):
     return out
   return train
   
+
+
+
+def D_training_function(D, optim, config):
+  _, discriminator_loss = losses.load_loss(config)
+  discriminator_rate = losses.rate(config)
+  
+  def train(x_real, x_fake, y_fake):
+    optim.zero_grad()
+    # How many chunks to split x and y into?
+    x_real = torch.split(x_real, config['batch_size'])
+    x_fake = torch.split(x_fake, config['batch_size'])
+    y_fake = torch.split(y_fake, config['batch_size'])
+
+    counter = 0
+    
+    # Optionally toggle D's "require_grad"
+    if config['toggle_grads']:
+      utils.toggle_grad(D, True)
+      
+    for step_index in range(config['num_D_steps']):
+      # If accumulating gradients, loop multiple times before an optimizer step
+      optim.zero_grad()
+      for accumulation_index in range(config['num_D_accumulations']):
+        D_input = torch.cat([x_real[counter], x_fake[counter]], 0)
+        D_class = torch.cat([y_fake[counter], y_fake[counter]], 0)
+        # Get Discriminator output
+        D_out = D(D_input, D_class)
+
+        D_real, D_fake = torch.split(D_out, [x_real[counter].shape[0], x_fake[counter].shape[0]])
+        # logging.info(f'Fake Min/Max {D_fake.min()}/{D_fake.max()}')
+        # logging.info(f'Real Min/Max {D_real.min()}/{D_real.max()}')
+        # Compute components of D's loss, average them, and divide by 
+        # the number of gradient accumulations
+        D_loss_real, D_loss_fake = discriminator_loss(D_fake, D_real)
+        D_loss = (D_loss_real + D_loss_fake) / float(config['num_D_accumulations'])
+        D_loss.backward()
+        counter += 1
+        
+      # Optionally apply ortho reg in D
+      if config['D_ortho'] > 0.0:
+        # Debug print to indicate we're using ortho reg in D.
+        logging.info('using modified ortho reg in D')
+        utils.ortho(D, config['D_ortho'])
+      
+      optim.step()
+    
+    # Optionally toggle "requires_grad"
+    if config['toggle_grads']:
+      utils.toggle_grad(D, False)
+       
+
+    
+    out = {'D_loss': float(D_loss.item()), 
+            'D_loss_real': float(D_loss_real.item()),
+            'D_loss_fake': float(D_loss_fake.item()),
+            'Acc_real': float(torch.sum(discriminator_rate(D_real))/D_real.size(0)*100),
+            'Acc_fake': float(100-torch.sum(discriminator_rate(D_fake))/D_fake.size(0)*100)}
+
+    # Return G's loss and the components of D's loss.
+    return out
+  return train
+
+def D_evaluating_function(D, loaders, config):
+  discriminator_rate = losses.rate(config)
+  pq_rate = losses.pq_fun(config)
+
+  def test(state_dict, test_log, experiment_name):
+    count_real = 0
+    true_real = 0
+    count_fake = 0
+    true_fake = 0
+    pqs = []
+    for (x_real, y_real) in loaders[1]:
+      Dx = D(x_real, y_real*0)
+      pq = pq_rate(Dx)
+
+      true_real += int((discriminator_rate(Dx)).sum())
+      count_real += x_real.shape[0]
+      for i in range(pq.shape[0]):
+        pqs.append(pq[i].item()) 
+     
+    for (x_fake, y_fake) in loaders[0]:
+      Dx = D(x_fake, y_fake*0)
+      pq = pq_rate(Dx)
+      true_fake += int((discriminator_rate(Dx)).sum())
+      count_fake += x_fake.shape[0]
+      for i in range(pq.shape[0]):
+        pqs.append(pq[i].item()) 
+    acc_real = true_real/count_real*100
+    acc_fake = 100-true_fake/count_fake*100
+    hist = np.histogram(np.array(pqs), bins=np.logspace(-3, 3, 20))
+
+
+
+    if state_dict['best_Acc']<acc_real+acc_fake:
+      state_dict['save_best_num'] = (state_dict['save_best_num'] + 1 ) % config['num_best_copies']
+      utils.save_weights(None, D.module if config['parallel'] else D, state_dict, config['weights_root'],
+                    experiment_name, 'best%d' % state_dict['save_best_num'],
+                     None)
+      state_dict['best_Acc'] = max(state_dict['best_Acc'], acc_fake+acc_real)
+    utils.save_weights(None, D.module if config['parallel'] else D, state_dict, config['weights_root'],
+                     experiment_name, None, None)
+        # Log results to file
+    test_log.log(itr=int(state_dict['itr']), Acc_real_eval=float(acc_real),
+               Acc_fake_eval=float(acc_fake), hist=hist[0].tolist())
+
+    logging.info(f'Itr {state_dict["itr"]}: Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.  Best Acc: {acc_real+acc_fake:.2f}/{state_dict["best_Acc"]:.2f}')
+  return test
+
+
+
+
 ''' This function takes in the model, saves the weights (multiple copies if 
     requested), and prepares sample sheets: one consisting of samples given
     a fixed noise seed (to show how the model evolves throughout training),
