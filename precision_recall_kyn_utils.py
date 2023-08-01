@@ -86,6 +86,7 @@ class IPR():
             if input.endswith('samples.npz'):
                 feats = self.extract_features_from_npz(input)
             elif input.endswith('.npz'):  # input is precalculated file
+                print(input)
                 f = np.load(input)
                 feats = f['feature']
                 radii = f['radii']
@@ -131,9 +132,10 @@ class IPR():
             A numpy array of dimension (num images, dims)
         """
         desc = 'extracting features of %d images' % self.num_samples
-        num_batches = int(np.ceil(self.num_samples / self.batch_size))
         images, _ = sample()
-        _, _, height, width = images.shape
+        batch_size, _, height, width = images.shape
+        num_batches = int(np.ceil(self.num_samples / batch_size))
+
         if height != 224 or width != 224:
             resize = partial(F.interpolate, size=(224, 224))
         else:
@@ -173,10 +175,7 @@ class IPR():
               start = bi * self.batch_size
               end = start + self.batch_size
               batch = images[start:end]
-       
               batch = resize(batch)
-
-
               feature = self.vgg16(batch.cuda())
               features.append(feature.cpu().data.numpy())
 
@@ -207,14 +206,12 @@ class IPR():
               start = bi * self.batch_size
               end = start + self.batch_size
               batch = images[start:end]
-       
               batch = resize(batch)
-
-
               feature = self.vgg16(batch.cuda())
               features.append(feature.cpu().data.numpy())
-
         return np.concatenate(features, axis=0)
+    
+
     def extract_features_from_files(self, path_or_fnames):
         """
         Extract features of vgg16-fc2 for all images in path
@@ -405,12 +402,14 @@ def get_custom_loader(image_dir_or_fnames, image_size=224, batch_size=64, num_wo
 # The iterator can return samples with a different batch size than used in
 # training, using the setting confg['inception_batchsize']
 def prepare_pr_metrics(config):
-    assert os.path.exists('samples/features/'+config['dataset'].strip('_hdf5')+'_vgg_features.npz'), (
+    dset = config['dataset'].split('_')[0]
+
+    assert os.path.exists('samples/features/'+dset+'_vgg_features.npz'), (
                 'Make sure you have launched calculate_vgg_features.py before ! '
                      )
 
     ipr = IPR(batch_size=64, k=3, num_samples=config['num_pr_images'], model=None)
-    ipr.compute_manifold_ref('samples/features/'+config['dataset'].strip('_hdf5')+'_vgg_features.npz')
+    ipr.compute_manifold_ref('samples/features/'+dset+'_vgg_features.npz')
 
     def get_pr_metrics(sample, prints=False):
         if prints:

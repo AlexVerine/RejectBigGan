@@ -109,14 +109,17 @@ class ImageFolder(data.Dataset):
                loader=default_loader, load_in_mem=False, 
                index_filename='imagenet_imgs.npz', **kwargs):
     classes, class_to_idx = find_classes(root)
+
+    print(classes, class_to_idx)
     # Load pre-computed image directory walk
     if os.path.exists(index_filename):
+      print('here')
       logging.info('Loading pre-saved Index file %s...' % index_filename)
       imgs = np.load(index_filename)['imgs']
     # If first time, walk the folder directory and save the 
     # results to a pre-computed file.
     else:
-      logging.info('Generating  Index file %s...' % index_filename)
+      print('Generating  Index file %s...' % index_filename)
       imgs = make_dataset(root, class_to_idx)
       np.savez_compressed(index_filename, **{'imgs' : imgs})
     if len(imgs) == 0:
@@ -184,7 +187,7 @@ import h5py as h5
 import torch
 class ILSVRC_HDF5(data.Dataset):
   def __init__(self, root, transform=None, target_transform=None,
-               load_in_mem=False, train=True,download=False, validate_seed=0,
+               load_in_mem=False, train=True, download=False, validate_seed=0,
                val_split=0, **kwargs): # last four are dummies
       
     self.root = root

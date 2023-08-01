@@ -249,15 +249,14 @@ def accumulate_inception_activations_from_file(sample, net, num_inception_images
   num_found_images = len(dataloader.dataset)
   if num_found_images < self.num_samples:
     logging.info('WARNING: num_found_images(%d) < num_samples(%d)' % (num_found_images, self.num_samples))
-  pool, logits, labels = [], [], []
+  pool, logits = [], []
   while (torch.cat(logits, 0).shape[0] if len(logits) else 0) < num_inception_images:
     with torch.no_grad():
-      images, labels_val = sample()
+      images, _ = sample()
       pool_val, logits_val = net(images.float())
       pool += [pool_val]
       logits += [F.softmax(logits_val, 1)]
-      labels += [labels_val]
-  return torch.cat(pool, 0), torch.cat(logits, 0), torch.cat(labels, 0)
+  return torch.cat(pool, 0), torch.cat(logits, 0)
 
 # Loop and run the sampler and the net until it accumulates num_inception_images
 # activations. Return the pool, the logits, and the labels (if one wants 
@@ -267,13 +266,25 @@ def accumulate_inception_activations(sample, net, num_inception_images=50000):
   pool, logits, labels = [], [], []
   while (torch.cat(logits, 0).shape[0] if len(logits) else 0) < num_inception_images:
     with torch.no_grad():
-      images, labels_val = sample()
+      images, _ = sample()
       pool_val, logits_val = net(images.float())
       pool += [pool_val]
       logits += [F.softmax(logits_val, 1)]
-      labels += [labels_val]
-  return torch.cat(pool, 0), torch.cat(logits, 0), torch.cat(labels, 0)
+  return torch.cat(pool, 0), torch.cat(logits, 0)
 
+def accumulate_inception_activations_torch(sample, net, num_inception_images=50000):
+  batch_size = 256
+  num_batches = int(np.ceil(num_inception_images / batch_size))
+  pool, logits = [], []
+  with torch.no_grad():
+    for bi in range(num_batches):
+      start = bi * batch_size
+      end = start + batch_size
+      images = sample[start:end]
+      pool_val, logits_val = net(images.float())
+      pool += [pool_val]
+      logits += [F.softmax(logits_val, 1)]
+  return torch.cat(pool, 0), torch.cat(logits, 0)
 
 # Load and wrap the Inception model
 def load_inception_net(parallel=False):
@@ -302,10 +313,13 @@ def prepare_inception_metrics(dataset, parallel, no_fid=False):
                             prints=False, use_torch=True):
     if prints:
       logging.info('Gathering activations...')
+
     if isinstance(sample, str):
         print('cool')
+    elif isinstance(sample, torch.Tensor):
+      pool, logits  = accumulate_inception_activations_torch(sample, net, num_inception_images)
     else:
-        pool, logits, labels = accumulate_inception_activations(sample, net, num_inception_images)
+        pool, logits = accumulate_inception_activations(sample, net, num_inception_images)
     if prints:  
       logging.info('Calculating Inception Score...')
     IS_mean, IS_std = calculate_inception_score(logits.cpu().numpy(), num_splits)
@@ -321,12 +335,11 @@ def prepare_inception_metrics(dataset, parallel, no_fid=False):
       if prints:
         logging.info('Covariances calculated, getting FID...')
       if use_torch:
-
         FID = torch_calculate_frechet_distance(mu, sigma, torch.tensor(data_mu).float().cuda(), torch.tensor(data_sigma).float().cuda())
         FID = float(FID.cpu().numpy())
       else:
         FID = numpy_calculate_frechet_distance(mu, sigma, data_mu, data_sigma)
     # Delete mu, sigma, pool, logits, and labels, just in case
-    del mu, sigma, pool, logits, labels
+    del mu, sigma, pool, logits
     return IS_mean, IS_std, FID
   return get_inception_metrics
