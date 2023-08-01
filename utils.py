@@ -456,6 +456,8 @@ def add_cluster_parser(parser):
   parser.add_argument("--debug", action="store_true",
                       help="Activate debug mode.")
   parser.add_argument("--mode", default="train", choices=['train', 'sample'])
+  parser.add_argument("--D_only", default=None, action='store_true')
+
   return parser
 
 # Convenience dicts

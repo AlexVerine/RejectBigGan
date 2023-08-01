@@ -3,6 +3,7 @@ import sys
 import submitit
 from train import run 
 from sample import run_sampler
+from train_D import runD
 from utils import prepare_parser, add_sample_parser, add_cluster_parser, prepare_root, name_from_config
 
 def main():
@@ -79,7 +80,10 @@ def main():
     )
 
     if config['mode'] ==  'train':
-        job = executor.submit(run, config)
+        if config['D_only']:
+            job = executor.submit(runD, config)
+        else:
+            job = executor.submit(run, config)
     else:
         job = executor.submit(run_sampler, config)
     

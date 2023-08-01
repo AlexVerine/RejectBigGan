@@ -34,7 +34,7 @@ from sync_batchnorm import patch_replication_callback
 
 # The main training file. Config is a dictionary specifying the configuration
 # of this training run.
-def run(config):
+def runD(config):
 
   # Update the config dict as necessary
   # This is for convenience, to add settings derived from the user-specified
@@ -222,7 +222,7 @@ def main():
 
 
   print(config)
-  run(config)
+  runD(config)
 
 if __name__ == '__main__':
   main()
