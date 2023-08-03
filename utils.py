@@ -469,7 +469,7 @@ dset_dict = {'M': torchvision.datasets.MNIST, 'FM': torchvision.datasets.Fashion
              'C10': dset.CIFAR10, 'C100': dset.CIFAR100,
              'C10_hdf5': dset.ILSVRC_HDF5, 'C100_hdf5': dset.ILSVRC_HDF5,
              'CA64': dset.CelebA, 'CA64_hdf5': dset.CelebA_HDF5,
-             'CA64_denseflow':  dset.ImageFolder, 'CA64_hdf5': dset.CelebA_HDF5,
+             'CA64_denseflow':  dset.ImageFolder, 'CA64_denseflow_hdf5': dset.CelebA_HDF5,
              'CA256': dset.FFHQ, 'CA256_hdf5': dset.CelebA_HDF5,
              'LSB': torchvision.datasets.LSUN, 'LSB_hdf5': dset.CelebA_HDF5,
              'LSC': torchvision.datasets.LSUN, 'LSC_hdf5': dset.CelebA_HDF5,

@@ -23,7 +23,7 @@ def run_interactive(args):
 if __name__ == '__main__':
 
   parser = argparse.ArgumentParser()
-  parser.add_argument("--account", type=str, default='yxj@gpu',
+  parser.add_argument("--account", type=str, default='esq@gpu',
                       help="Slurm account to use.")
   parser.add_argument("--ngpus", type=int, default=4, 
                       help="Number of GPUs to use.")
