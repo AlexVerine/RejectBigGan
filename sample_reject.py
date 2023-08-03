@@ -24,7 +24,7 @@ import losses
 from utils_rejection import get_sampler_function, get_sampling_function, test_sampling
 
 
-def run_sampler(config):
+def run_samplerD(config):
   # Prepare state dict, which holds things like epoch # and itr #
   state_dict = {'itr': 0, 'epoch': 0, 'save_num': 0, 'save_best_num': 0,
                 'best_IS': 0, 'best_FID': 999999, 'config': config}
@@ -96,7 +96,13 @@ def run_sampler(config):
   Sampling.eval()
   sampler = get_sampler_function(config, sampling=Sampling, D=D)
   sample = functools.partial(sampler, loader=iterative_loader, test=False)
-  
+  if config['sampling'] is not None:
+    if config['sampling'] == 'DRS':
+      name = config['sampling'] + '_' +  str(config['gamma_drs'])
+    else:
+      name = config['sampling'] + '_' +  str(config['budget']) 
+  else:
+    name = "NoRS"
 
   # Get Inception Score and FID
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'].split('_')[0], config['parallel'], config['no_fid'])
@@ -110,13 +116,15 @@ def run_sampler(config):
       x = torch.Tensor().cuda()
       while x.shape[0]<config['num_inception_images'] or x.shape[0]<config['num_pr_images']:
         x  = torch.cat([x, sample()[0]], dim=0)
-    Ps, Rs = get_pr_curve(x[:config['num_pr_images']], "eval")
+    Ps, Rs = get_pr_curve(x[:config['num_pr_images']], name)
     IS_mean, IS_std, FID = get_inception_metrics(x[:config['num_inception_images']], config['num_inception_images'], 
                                                  num_splits=10, 
                                                  prints=False,
                                                  use_torch=False)
+    P, R = get_pr_metric(x[:config['num_pr_images']])
     N, Na = test_sampling(sample)
-    
+
+
     # Prepare output string
     outstring = 'On %s ' % (config['dataset'])
     outstring += 'using %s weights ' % (config['load_weights'])
@@ -145,8 +153,9 @@ def run_sampler(config):
     logging.info('Calculating metrics...')
     get_metrics()
   if config['sample_random']:
-    for x, y in loaders[0]:
-      pass
+    iterative_loader = iter(loaders[0])
+    sample = functools.partial(sampler, loader=iterative_loader, test=False)
+
     batch_sample = 100
     images, labels = sample()    
     images = images[:batch_sample]
@@ -179,7 +188,7 @@ def main():
 
 
   print(config)
-  run_sampler(config)
+  run_samplerD(config)
   
 if __name__ == '__main__':    
   main()

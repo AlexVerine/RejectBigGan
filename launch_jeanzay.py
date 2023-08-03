@@ -4,6 +4,7 @@ import submitit
 from train import run 
 from sample import run_sampler
 from train_D import runD
+from sample_reject import run_samplerD
 from utils import prepare_parser, add_sample_parser, add_cluster_parser, prepare_root, name_from_config
 
 def main():
@@ -85,7 +86,10 @@ def main():
         else:
             job = executor.submit(run, config)
     else:
-        job = executor.submit(run_sampler, config)
+        if config['D_only']:
+            job = executor.submit(run_samplerD, config)
+        else:
+            job = executor.submit(run_sampler, config)
     
 if __name__ == '__main__':
   main()
