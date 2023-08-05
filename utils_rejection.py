@@ -29,7 +29,7 @@ class DRSampling(nn.Module):
     self.M = M
 
   def forward(self, pq=None):
-    return torch.sigmoid(torch.log(pq) - torch.log(self.M) - torch.log(1-pq/self.M*np.exp(self.eps_drs)) - self.gamma_drs)
+    return torch.sigmoid(torch.log(pq) - torch.log(self.M) - torch.log(1-pq/self.M*np.exp(-self.eps_drs)) - self.gamma_drs)
 
 
 
@@ -68,7 +68,7 @@ class BudgetSampling(nn.Module):
   def compute_optimal_c(self, pq, n_iterations, depth=1, scale=1):
     pqm = pq/self.M
     c_min = 1
-    c_max = 10000
+    c_max = 100000
     c_med = (c_min+c_max)/2
     n_iteration = 0
     while n_iteration<n_iterations:
@@ -81,6 +81,7 @@ class BudgetSampling(nn.Module):
       else:
         n_iteration = n_iterations
       n_iteration += 1
+      print(f'i: {n_iteration} c:{c_med:.2f}, bud: {torch.mean(torch.clamp(pqm*c_med, min=0, max=1)):.2f}')
     return torch.Tensor([c_med]).cuda()
 
   def update(self, pq):  
@@ -115,8 +116,6 @@ def get_sampling_function(config, loader, D):
           M = torch.max(torch.vstack((pq, M)))
           pqs = torch.vstack((pqs, pq))
 
-          if pqs.shape[0]>10000:
-            break 
       if config['sampling'] == "DRS":
         return DRSampling(config, M).cuda(), M
       else:
@@ -147,6 +146,7 @@ def get_sampler_function(config, sampling, D):
         n_accepted = 0
         x_accepted = torch.Tensor().cuda()
         while n_accepted < n_samples:
+                
                 x_fake, y_fake = next(loader)
                 x_fake = x_fake.cuda()
                 Dxf = D(x_fake, y_fake.cuda())
@@ -167,7 +167,7 @@ def test_sampling(sampler):
   N = 0
   Na = 0
   while N<10000:
-    _, n, na = sampler(test=True)
+    _, n, na = sampler()
     N+=n
     Na+=na
   return N, Na
