@@ -361,7 +361,6 @@ class CIFAR10(dset.CIFAR10):
       self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
     
     elif self.train:
-      logging.info(np.shape(self.data))
       if self.val_split > 0:
         self.data = np.delete(self.data,self.val_indices,axis=0)
         self.labels = list(np.delete(np.asarray(self.labels),self.val_indices,axis=0))
@@ -459,7 +458,6 @@ class CelebA(data.Dataset):
       raise RuntimeError('Dataset not found.\n\nFrom docstring:\n\n' + self.__doc__)
 
     if not self._check_processed():
-      logging.info('here')
       self.process()
       
       

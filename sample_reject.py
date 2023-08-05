@@ -20,7 +20,7 @@ import inception_utils
 import precision_recall_kyn_utils
 import precision_recall_simon_utils
 import utils
-import losses
+import train_fns
 from utils_rejection import get_sampler_function, get_sampling_function, test_sampling
 
 
@@ -60,42 +60,55 @@ def run_samplerD(config):
   logging.info('Experiment name is %s' % experiment_name)
 
 
-  utils.setup_logging(config)
-
   config['batch_size'] = config['batch_size_eval']
   if "hdf5" in config['dataset']:
     config['dataset'] = config['dataset'].replace("_hdf5", "_eval_hdf5")
   else:
     config['dataset'] = config['dataset'] + "_eval"
-  # config['mode'] = "train"
-
   # Next, build the model
   D = model.Discriminator(**config).to(device)
   D.eval()
-  
-  
-  # If parallel, parallelize the D module
-  if config['parallel']:
-    D = nn.DataParallel(D)
-
-  # Load weights
+    # Load weights
   logging.info('Loading weights...')
   # Here is where we deal with the ema--load ema weights or load normal weights
   utils.load_weights(None, D, None,
                     config['weights_root'], experiment_name, 
                     config['load_weights'] if config['load_weights'] else None,
-                    None, strict=False,
+                    None,
                     load_optim=False)
 
-  #load datasets: loaders[0]=G, loaders[1]=Dataset 
-  loaders = utils.get_data_loaders(**config)
-  # loaders = [loaders[1],loaders[0]]
+  # If parallel, parallelize the D module
+  if config['parallel']:
+    D = nn.DataParallel(D)
+
+
+
+
+  if config["sampling"] is None:
+   
+    loaders = utils.get_data_loaders(**{**config, 'original':True, 'load_in_mem':False, "mode":'train'})
+    print(len(loaders[0].dataset))
+    test = train_fns.D_evaluating_function(D, loaders, config, mode="eval")
+    logging.info("Testing on trained data:")
+    test()
+    
+    loaders = utils.get_data_loaders(**{**config, 'original':True, 'load_in_mem':False, "mode":'sample'})
+    print(len(loaders[0].dataset))
+    test = train_fns.D_evaluating_function(D, loaders, config, mode="eval")
+    logging.info("Testing on eval data:")
+    test()
+
+  loaders = utils.get_data_loaders(**{**config, 'original':False})
   print(len(loaders[0].dataset))
+
   iterative_loader = iter(loaders[0])
-  Sampling, M = get_sampling_function(config, iterative_loader, D)
+  Sampling, M = get_sampling_function(config, loaders[0], D)
   Sampling.eval()
+  #load datasets: loaders[0]=G, loaders[1]=Dataset 
   sampler = get_sampler_function(config, sampling=Sampling, D=D)
   sample = functools.partial(sampler, loader=iterative_loader, test=False)
+
+
   if config['sampling'] is not None:
     if config['sampling'] == 'DRS':
       name = config['sampling'] + '_' +  str(config['gamma_drs'])
@@ -110,18 +123,34 @@ def run_samplerD(config):
   get_pr_metric = precision_recall_kyn_utils.prepare_pr_metrics(config)
   get_pr_curve = precision_recall_simon_utils.prepare_pr_curve(config)
     # Prepare a simple function get metrics that we use for trunc curves
-  def get_metrics():
 
+  if config['sample_inception_metrics']: 
+    logging.info('Calculating metrics...')
     with torch.no_grad():
       x = torch.Tensor().cuda()
       while x.shape[0]<config['num_inception_images'] or x.shape[0]<config['num_pr_images']:
-        x  = torch.cat([x, sample()[0]], dim=0)
-    Ps, Rs = get_pr_curve(x[:config['num_pr_images']], name)
-    IS_mean, IS_std, FID = get_inception_metrics(x[:config['num_inception_images']], config['num_inception_images'], 
+        try:
+          x  = torch.cat([x, sample()[0]], dim=0)
+        except StopIteration:
+          logging.info(f"Not enough samples in Dataset Eval. Stopped at {x.shape[0]}.")
+          iterative_loader = iter(loaders[0])
+          sample = functools.partial(sampler, loader=iterative_loader, test=True)
+        
+    if x.shape[0]>= config['num_pr_images']:
+      P, R, D, C = get_pr_metric(x[:config['num_pr_images']])
+      Ps, Rs = get_pr_curve(x[:config['num_pr_images']], name)
+    else:
+      P, R, Ps, Rs, D, C = 0, 0, 0, 0
+    if x.shape[0]>= config['num_inception_images']:
+      IS_mean, IS_std, FID = get_inception_metrics(x[:config['num_inception_images']], config['num_inception_images'], 
                                                  num_splits=10, 
                                                  prints=False,
                                                  use_torch=False)
-    P, R = get_pr_metric(x[:config['num_pr_images']])
+    else:
+      IS_mean, IS_std, FID = 0, 0, 0
+    
+    iterative_loader = iter(loaders[0])
+    sample = functools.partial(sampler, loader=iterative_loader, test=True)
     N, Na = test_sampling(sample)
 
 
@@ -141,17 +170,15 @@ def run_samplerD(config):
     outstring += f'\nTest on rate - Sampled {N}, Accepted: {Na}, Rate: {100*Na/N:.2f}%.'
     outstring += '\nItr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID)
     outstring += '\nItr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100)
+    outstring += '\nItr %d: Naeem Density is %2.3f, Naeem Coverage is %2.3f' % (state_dict['itr'], D*100, C*100)
     outstring += '\nItr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100)
     logging.info(outstring)
 
     utils.write_evaldata(config['logs_root'], experiment_name, config, 
-                         {'itr': state_dict['itr'], 'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Rs':Rs, 'Ps':Ps, 'rate':Na/N,
+                         {'itr': state_dict['itr'], 'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Rs':Rs, 'Ps':Ps, 'D':D, 'C':C,  'rate':Na/N,
                           'sampling': config['sampling'],'gamma': config['gamma_drs'], 'budget': config['budget'] })
 
 
-  if config['sample_inception_metrics']: 
-    logging.info('Calculating metrics...')
-    get_metrics()
   if config['sample_random']:
     iterative_loader = iter(loaders[0])
     sample = functools.partial(sampler, loader=iterative_loader, test=False)

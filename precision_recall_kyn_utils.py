@@ -14,7 +14,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torch.nn import DataParallel
 
-
+### wget
 
 Manifold = namedtuple('Manifold', ['features', 'radii'])
 PrecisionAndRecall = namedtuple('PrecisinoAndRecall', ['precision', 'recall'])
@@ -58,9 +58,28 @@ class IPR():
         assert self.manifold_ref is not None, "call IPR.compute_manifold_ref() first"
 
         manifold_subject = self.compute_manifold(subject)
-        precision = compute_metric(self.manifold_ref, manifold_subject.features, 'computing precision...')
-        recall = compute_metric(manifold_subject, self.manifold_ref.features, 'computing recall...')
-        return PrecisionAndRecall(precision, recall)
+        distance_real_fake = compute_pairwise_distances(self.manifold_ref.features, manifold_subject.features)
+
+        precision = (distance_real_fake <
+                    np.expand_dims(self.manifold_ref.radii, axis=1)
+                    ).any(axis=0).mean()
+
+        recall = (distance_real_fake <
+                  np.expand_dims(manifold_subject.radii, axis=0)
+                  ).any(axis=1).mean()
+
+        density = (1. / float(self.k)) * (
+                distance_real_fake <
+                np.expand_dims(self.manifold_ref.radii, axis=1)
+                ).sum(axis=0).mean()
+
+        coverage = (distance_real_fake.min(axis=1) <
+                self.manifold_ref.radii
+                ).mean()
+
+        # precision = compute_metric(self.manifold_ref, manifold_subject.features, 'computing precision...')
+        # recall = compute_metric(manifold_subject, self.manifold_ref.features, 'computing recall...')
+        return precision, recall, density, coverage
 
     def compute_manifold_ref(self, path):
         self.manifold_ref = self.compute_manifold(path)
@@ -408,15 +427,15 @@ def prepare_pr_metrics(config):
                 'Make sure you have launched calculate_vgg_features.py before ! '
                      )
 
-    ipr = IPR(batch_size=64, k=3, num_samples=config['num_pr_images'], model=None)
+    ipr = IPR(batch_size=64, k=5, num_samples=config['num_pr_images'], model=None)
     ipr.compute_manifold_ref('samples/features/'+dset+'_vgg_features.npz')
 
     def get_pr_metrics(sample, prints=False):
         if prints:
             logging.info('Gathering activations and computing pr')
-        precision, recall = ipr.precision_and_recall(sample)
-        
-        return precision, recall
+        precision, recall, density,  coverage = ipr.precision_and_recall(sample)
+    
+        return precision, recall, density, coverage
     
     return get_pr_metrics
 

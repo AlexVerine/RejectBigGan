@@ -172,11 +172,13 @@ def D_training_function(D, optim, config):
     return out
   return train
 
-def D_evaluating_function(D, loaders, config):
+
+
+def D_evaluating_function(D, loaders, config, mode = "train"):
   discriminator_rate = losses.rate(config)
   pq_rate = losses.pq_fun(config)
 
-  def test(state_dict, test_log, experiment_name):
+  def test(state_dict=None, test_log=None, experiment_name=None):
     count_real = 0
     true_real = 0
     count_fake = 0
@@ -200,23 +202,29 @@ def D_evaluating_function(D, loaders, config):
         pqs.append(pq[i].item()) 
     acc_real = true_real/count_real*100
     acc_fake = 100-true_fake/count_fake*100
-    hist = np.histogram(np.array(pqs), bins=np.logspace(-3, 3, 20))
+
+    if mode=="train":
+      hist = np.histogram(np.array(pqs), bins=np.logspace(-3, 3, 20))
 
 
 
-    if state_dict['best_Acc']<acc_real+acc_fake:
-      state_dict['save_best_num'] = (state_dict['save_best_num'] + 1 ) % config['num_best_copies']
+      if state_dict['best_Acc']<acc_real+acc_fake:
+        state_dict['save_best_num'] = (state_dict['save_best_num'] + 1 ) % config['num_best_copies']
+        utils.save_weights(None, D.module if config['parallel'] else D, state_dict, config['weights_root'],
+                      experiment_name, 'best%d' % state_dict['save_best_num'],
+                      None)
+        state_dict['best_Acc'] = max(state_dict['best_Acc'], acc_fake+acc_real)
       utils.save_weights(None, D.module if config['parallel'] else D, state_dict, config['weights_root'],
-                    experiment_name, 'best%d' % state_dict['save_best_num'],
-                     None)
-      state_dict['best_Acc'] = max(state_dict['best_Acc'], acc_fake+acc_real)
-    utils.save_weights(None, D.module if config['parallel'] else D, state_dict, config['weights_root'],
-                     experiment_name, None, None)
-        # Log results to file
-    test_log.log(itr=int(state_dict['itr']), Acc_real_eval=float(acc_real),
-               Acc_fake_eval=float(acc_fake), hist=hist[0].tolist())
+                      experiment_name, None, None)
+          # Log results to file
+      test_log.log(itr=int(state_dict['itr']), Acc_real_eval=float(acc_real),
+                Acc_fake_eval=float(acc_fake), hist=hist[0].tolist())
 
-    logging.info(f'Itr {state_dict["itr"]}: Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.  Best Acc: {acc_real+acc_fake:.2f}/{state_dict["best_Acc"]:.2f}')
+      logging.info(f'Itr {state_dict["itr"]}: Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.  Best Acc: {acc_real+acc_fake:.2f}/{state_dict["best_Acc"]:.2f}')
+      logging.info(f'Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.')
+    else:
+      logging.info(f'Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.')
+      print("here boyyyy")
   return test
 
 

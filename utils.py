@@ -503,8 +503,8 @@ root_dict = {'M':'MNIST', 'FM':'FashionMNIST',
              'C10_hdf5': 'cifar10.hdf5', 'C100_hdf5': 'cifar100.hdf5',
              'C10_styleganxl': 'cifar10_styleganxl','C10_styleganxl_hdf5': 'cifar10_styleganxl.hdf5',
              'C10_styleganxl_eval': 'cifar10_styleganxl_eval','C10_styleganxl_eval_hdf5': 'cifar10_styleganxl_eval.hdf5',
-             'C10_denseflow': 'C10_denseflow','C10_denseflow_hdf5': 'cifar10_styleganxl.hdf5',
-             'C10_denseflow_eval': 'C10 _denseflow_eval','C10_denseflow_eval_hdf5': 'cifar10_denseflow_eval.hdf5',
+             'C10_denseflow': 'C10_denseflow','C10_denseflow_hdf5': 'cifar10_denseflow.hdf5',
+             'C10_denseflow_eval': 'C10_denseflow_eval','C10_denseflow_eval_hdf5': 'cifar10_denseflow_eval.hdf5',
              'CA64': 'celeba', 'CA64_hdf5': 'celeba64.hdf5',
              'CA64_denseflow': 'CA64_denseflow', 'CA64_denseflow_hdf5': 'celeba64_denseflow.hdf5',
              'CA64_denseflow_eval': 'CA64_denseflow_eval', 'CA64_denseflow_eval_hdf5': 'celeba64_denseflow_eval.hdf5',
@@ -666,15 +666,16 @@ def get_data_dir(data_root, dataset):
 
 # Convenience function to centralize all data loaders
 def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64, 
-                     num_workers=8, shuffle=True, load_in_mem=False, hdf5=False,
+                     num_workers=8, shuffle=True, load_in_mem=False,
                      pin_memory=True, drop_last=True, start_itr=0,
                      num_epochs=500, use_multiepoch_sampler=False, mode='train',
+                     original=True,
                      **kwargs):
   data_root_init = data_root
   data_root = get_data_dir(data_root, dataset)
   # Append /FILENAME.hdf5 to root if using hdf5
   data_root += '/%s' % root_dict[dataset.replace("_eval", '')]
-  logging.info('Using dataset root location %s' % data_root)
+
 
   which_dataset = dset_dict[dataset.replace("_eval", '')]
   norm_mean = [0.5,0.5,0.5]
@@ -703,7 +704,6 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
                          transforms.RandomHorizontalFlip()]
         
     else:
-      logging.info('Data will not be augmented...')
       if np.sum([d in dataset for d in ['C10', 'C100']]):
         train_transform = []
       elif np.sum([d in dataset for d in ['M', 'FM']]):
@@ -740,14 +740,15 @@ def get_data_loaders(dataset, data_root=None, augment=False, batch_size=64,
     train_loader = DataLoader(train_set, batch_size=batch_size,
                               shuffle=shuffle, **loader_kwargs)
   loaders.append(train_loader)
-  if mode=='train':
+  if original:
     if np.sum([m in dataset for m in ['styleganxl', 'adm', 'edm', 'denseflow']]):
-      if np.sum([d in dataset for d in ['M', 'FM', "C10", "C100"]]):
-        d = dataset.split('_')[0]
+      if 'hdf5' in dataset:
+        d =   dataset.split('_')[0]+'_hdf5'
       else:
-        d = dataset.split('_')[0]+'_hdf5'
+        d = dataset.split('_')[0]
+      print(d)
       loaders.append(get_data_loaders(d,data_root_init, augment, batch_size, num_workers, 
-                                      shuffle, load_in_mem, hdf5, pin_memory, drop_last, start_itr, num_epochs,
+                                      shuffle, load_in_mem, pin_memory, drop_last, start_itr, num_epochs,
                                       use_multiepoch_sampler)[0])
   return loaders
 
@@ -905,7 +906,6 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
     logging.info('Loading %s weights from %s...' % (name_suffix, root))
   else:
     logging.info('Loading weights from %s...' % root)
-  logging.info('Loading %s weights from %s...' % (name_suffix, root))
 
   if G is not None:
     G.load_state_dict(
