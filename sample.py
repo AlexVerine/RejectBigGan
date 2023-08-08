@@ -166,7 +166,7 @@ def run_sampler(config):
                                                  num_splits=10, 
                                                  prints=False,
                                                  use_torch=False)
-    P, R = get_pr_metric(sample)
+    P, R, D, C = get_pr_metric(sample)
     
     # Prepare output string
     outstring = 'Using %s weights ' % ('ema' if config['use_ema'] else 'non-ema')
@@ -179,9 +179,11 @@ def run_sampler(config):
       outstring += 'using %d standing stat accumulations, ' % config['num_standing_accumulations']
     outstring += '\nItr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID)
     outstring += '\nItr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100)
+    outstring += '\nItr %d: Naeem Density is %2.3f, Naeem Coverage is %2.3f' % (state_dict['itr'], D, C)
+
     outstring += '\nItr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100)
     utils.write_evaldata(config['logs_root'], experiment_name, config, 
-                         {'itr': state_dict['itr'], 'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Rs':Rs, 'Ps':Ps})
+                         {'itr': state_dict['itr'],'z_var':config['z_var'],  'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Rs':Rs, 'Ps':Ps, 'D':D, 'C':C })
 
     logging.info(outstring)
   if config['sample_inception_metrics']: 
