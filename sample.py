@@ -83,7 +83,7 @@ def run_sampler(config):
   G_batch_size = max(config['G_batch_size'], config['batch_size']) 
   z_, y_ = utils.prepare_z_y(G_batch_size, G.dim_z, config['n_classes'],
                              device=device, fp16=config['G_fp16'], 
-                             z_var=config['z_var'])
+                             z_var=config['z_var'], trunc=config['trunc'])
   
   if config['G_eval_mode']:
     # logging.info('Putting G in eval mode..')
@@ -142,13 +142,19 @@ def run_sampler(config):
   if config['sample_random']:
     batch_sample = 100
     # logging.info('Preparing random sample sheet...')
-    loaders = utils.get_data_loaders(**{**config, 'batch_size': config['batch_size'] ,
-                                      'start_itr': state_dict['itr']})
+    # loaders = utils.get_data_loaders(**{**config, 'batch_size': config['batch_size'] ,
+    #                                   'start_itr': state_dict['itr']})
     
     images, labels = sample()    
     images = images[:batch_sample]
+    name = 'random_samples'
+    if config['trunc']:
+      name += "trunc_"+str(config['z_var']).replace('.', '_')
+    elif config['z_var'] != 1.0:
+      name += str(config['z_var']).replace('.', '_')
+
     torchvision.utils.save_image(images.float(),
-                                 '%s/%s/random_samples.jpg' % (config['samples_root'], experiment_name),
+                                 '%s/%s/%s.jpg' % (config['samples_root'], experiment_name, name),
                                  nrow=int(batch_sample**0.5),
                                  normalize=True)
 
@@ -160,7 +166,7 @@ def run_sampler(config):
   # Prepare a simple function get metrics that we use for trunc curves
   def get_metrics():
     sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)    
-    Ps, Rs = get_pr_curve(sample, "eval")
+    Psi, Rsi, Psa, Rsa = get_pr_curve(sample, "eval")
 
     IS_mean, IS_std, FID = get_inception_metrics(sample, config['num_inception_images'], 
                                                  num_splits=10, 
@@ -179,11 +185,12 @@ def run_sampler(config):
       outstring += 'using %d standing stat accumulations, ' % config['num_standing_accumulations']
     outstring += '\nItr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID)
     outstring += '\nItr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100)
+    outstring += '\nItr %d: Sajjadi Precision is %2.3f, Sajjadi Recall is %2.3f' % (state_dict['itr'], Psa*100, Rsa*100)
+    outstring += '\nItr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Psi*100, Rsi*100)
     outstring += '\nItr %d: Naeem Density is %2.3f, Naeem Coverage is %2.3f' % (state_dict['itr'], D, C)
 
-    outstring += '\nItr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100)
     utils.write_evaldata(config['logs_root'], experiment_name, config, 
-                         {'itr': state_dict['itr'],'z_var':config['z_var'],  'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Rs':Rs, 'Ps':Ps, 'D':D, 'C':C })
+                         {'itr': state_dict['itr'],'truc':config['trunc'], 'z_var':config['z_var'],  'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Psa':Psa, 'Rsa':Rsa,  'Psi':Psi, 'Rsi':Rsi, })
 
     logging.info(outstring)
   if config['sample_inception_metrics']: 

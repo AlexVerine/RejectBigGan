@@ -99,6 +99,9 @@ def prepare_parser():
     '--z_var', type=float, default=1.0,
     help='Noise variance: %(default)s)')    
   parser.add_argument(
+    '--trunc', action='store_true', default=False,
+    help='Noise Truncation: %(default)s)')    
+  parser.add_argument(
     '--hier', action='store_true', default=False,
     help='Use hierarchical z in G? (default: %(default)s)')
   parser.add_argument(
@@ -1291,12 +1294,25 @@ class Distribution(torch.Tensor):
       self.mean, self.var = kwargs['mean'], kwargs['var']
     elif self.dist_type == 'categorical':
       self.num_categories = kwargs['num_categories']
+    elif self.dist_type == 'truncated':
+      self.mean, self.var = kwargs['mean'], 1.0
+      self.trunc = kwargs['var']
+
 
   def sample_(self):
     if self.dist_type == 'normal':
       self.normal_(self.mean, self.var)
     elif self.dist_type == 'categorical':
-      self.random_(0, self.num_categories)    
+      self.random_(0, self.num_categories)
+    elif self.dist_type == 'truncated':
+      temp = torch.randn_like(self)
+      valid = temp <= self.trunc
+      while not valid.prod():
+        temp = torch.randn_like(self)*(~valid) + temp*valid
+        valid = temp <= self.trunc
+
+      self.data = temp
+
     # return self.variable
     
   # Silly hack: overwrite the to() method to wrap the new object
@@ -1310,9 +1326,12 @@ class Distribution(torch.Tensor):
 
 # Convenience function to prepare a z and y vector
 def prepare_z_y(G_batch_size, dim_z, nclasses, device='cuda', 
-                fp16=False,z_var=1.0):
+                fp16=False,z_var=1.0, trunc=False):
   z_ = Distribution(torch.randn(G_batch_size, dim_z, requires_grad=False))
-  z_.init_distribution('normal', mean=0, var=z_var)
+  if trunc:
+    z_.init_distribution('truncated', mean=0, var=z_var)
+  else:
+    z_.init_distribution('normal', mean=0, var=z_var)
   z_ = z_.to(device,torch.float16 if fp16 else torch.float32)   
   
   if fp16:

@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 from torch.utils.data import Dataset
 
+import sklearn.cluster
 import logging
 from functools import partial
 
@@ -366,6 +367,9 @@ class SourceTargetDataset(Dataset):
     def __precompute(self, input):
         if isinstance(input, partial):
             feats = self.extract_features_from_sample_function(input)
+        elif isinstance(input, str):
+            if input.endswith('samples.npz'):
+                feats = self.extract_features_from_npz(input)
         elif isinstance(input, torch.Tensor):
             feats = self.extract_features(input)
         elif isinstance(input, np.ndarray):
@@ -381,6 +385,29 @@ class SourceTargetDataset(Dataset):
             logging.info(type(input))
             raise TypeError
         return feats
+    
+    def extract_features_from_npz(self, images):
+        """
+        Extract features of vgg16-fc2 for all images
+        params:
+            images: torch.Tensors of size N x C x H x W
+        returns:
+            A numpy array of dimension (num images, dims)
+        """
+        images = torch.Tensor(np.load(images)['imgs'])
+        images = images[:self.num_samples]
+        desc = 'extracting features of %d images' % images.size(0)
+        num_batches = int(np.ceil(images.size(0) / self.batch_size))
+
+        features = []
+        with torch.no_grad():
+          for bi in range(num_batches):
+              start = bi * self.batch_size
+              end = start + self.batch_size
+              batch = images[start:end]
+              feature = self.net(batch.cuda())
+              features.append(feature.cpu().data.numpy())
+        return np.concatenate(features, axis=0)
     
     def extract_features_from_sample_function(self, sample):
         num_batches = int(np.ceil(self.num_samples / self.batch_size))
@@ -458,6 +485,56 @@ class SourceTargetDataset(Dataset):
         self.is_train = False
 
 
+class EarlyStopping(object):
+    def __init__(self, mode='min', min_delta=0, patience=10):
+        self.mode = mode
+        self.min_delta = min_delta
+        self.patience = patience
+        self.best = None
+        self.num_bad_epochs = 0
+        self.is_better = None
+        self._init_is_better(mode, min_delta)
+
+        if patience == 0:
+            self.is_better = lambda a, b: True
+
+    def step(self, metrics, network=None):
+        if self.best is None:
+            self.best = metrics
+            self.setNet(network)
+
+            return False
+
+        if np.isnan(metrics):
+            return True
+
+        if self.is_better(metrics, self.best):
+            self.num_bad_epochs = 0
+            self.best = metrics
+            self.setNet(network)
+        else:
+            self.num_bad_epochs += 1
+
+        if self.num_bad_epochs >= self.patience:
+            return True
+
+        return False
+    
+    def setNet(self, network):
+        if network is not None:
+            self.network = type(network)()
+            self.network.load_state_dict(network.state_dict())
+
+
+    def _init_is_better(self, mode, min_delta):
+        if mode not in {'min', 'max'}:
+            raise ValueError('mode ' + mode + ' is unknown!')
+        if mode == 'min':
+            self.is_better = lambda a, best: a < best - min_delta
+        if mode == 'max':
+            self.is_better = lambda a, best: a > best + min_delta
+
+
 class ClassifierTrainer:
     def __init__(self, dataset):
         self.dataset = dataset
@@ -512,10 +589,14 @@ class ClassifierTrainer:
         self.dataset.train()
         error = 0.5*(error_I + error_II)
         self.scheduler.step(error)
-        logging.info(f"loss {self.totalLoss}, error {f'({error_I:.2}+{error_II:.2})/2={error:.2}'}, lr {self.optimizer.param_groups[0]['lr']}")
-        return self.stopper.step(error)
+        stop = self.stopper.step(error)
+        # print(f"loss {self.totalLoss}, error {f'({error_I:.2}+{error_II:.2})/2={error:.2}'}, lr {self.optimizer.param_groups[0]['lr']}, stop: {stop}")
+        return stop
 
-    def run(self, num_epochs):
+    def run(self, num_epochs, patience):
+        early_stopping = (patience >= 1)
+        if early_stopping:
+            self.stopper = EarlyStopping(patience=patience)
         self.initClassifier()
         self.dataset.train()
         self.train_loader = DataLoader(self.dataset, self.batch_size, shuffle=True, num_workers=0)
@@ -523,8 +604,9 @@ class ClassifierTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=2, cooldown=3, factor=0.5)
         self.log_loss = torch.nn.BCEWithLogitsLoss()
         for ep in range(num_epochs):
+            if self.test():
+                break
             self.train()
-
         return self.classifier
 
 class EnsembleClassifier(nn.Module):
@@ -532,7 +614,7 @@ class EnsembleClassifier(nn.Module):
         super().__init__()
         self.networks=[]
 
-    def append(self, net):
+    def append(self, net):  
         self.networks.append(net)
 
     def forward(self, x):
@@ -541,66 +623,147 @@ class EnsembleClassifier(nn.Module):
             preds.append(net(x))
         return torch.median(torch.stack(preds), dim=0)[0]
 
-def computePRD(source_folder, target_folder, num_angles=1001, num_runs=10, num_epochs=10):
-    precisions = []
-    recalls = []
-    ensemble = EnsembleClassifier()
-    dataset = createTrainTestSets(source_folder, target_folder)
-    trainer = ClassifierTrainer(dataset, 'inception')
-    for k in range(num_runs):
-        classifier = trainer.run(num_epochs)
-        ensemble.append(classifier)
-    precision, recall = estimatePRD(ensemble, trainer.dataset, num_angles)
-    return precision, recall
 
-def compute_prd_from_embedding(eval_data, ref_data, num_clusters=20,
-                               num_angles=1001, num_runs=10,
-                               enforce_balance=True):
-  """Computes PRD data from sample embeddings.
-  The points from both distributions are mixed and then clustered. This leads
-  to a pair of histograms of discrete distributions over the cluster centers
-  on which the PRD algorithm is executed.
-  The number of points in eval_data and ref_data must be equal since
-  unbalanced distributions bias the clustering towards the larger dataset. The
-  check can be disabled by setting the enforce_balance flag to False (not
-  recommended).
+def _cluster_into_bins(eval_data, ref_data, num_clusters):
+  """Clusters the union of the data points and returns the cluster distribution.
+
+  Clusters the union of eval_data and ref_data into num_clusters using minibatch
+  k-means. Then, for each cluster, it computes the number of points from
+  eval_data and ref_data.
+
   Args:
     eval_data: NumPy array of data points from the distribution to be evaluated.
+    ref_data: NumPy array of data points from the reference distribution.
+    num_clusters: Number of cluster centers to fit.
+
+  Returns:
+    Two NumPy arrays, each of size num_clusters, where i-th entry represents the
+    number of points assigned to the i-th cluster.
+  """
+
+  cluster_data = np.vstack([eval_data, ref_data])
+  kmeans = sklearn.cluster.MiniBatchKMeans(n_clusters=num_clusters, n_init=10)
+  labels = kmeans.fit(cluster_data).labels_
+
+  eval_labels = labels[:len(eval_data)]
+  ref_labels = labels[len(eval_data):]
+
+  eval_bins = np.histogram(eval_labels, bins=num_clusters,
+                           range=[0, num_clusters], density=True)[0]
+  ref_bins = np.histogram(ref_labels, bins=num_clusters,
+                          range=[0, num_clusters], density=True)[0]
+  return eval_bins, ref_bins
+  
+
+def compute_prd(eval_dist, ref_dist, num_angles=1001, epsilon=1e-10):
+  """Computes the PRD curve for discrete distributions.
+
+  This function computes the PRD curve for the discrete distribution eval_dist
+  with respect to the reference distribution ref_dist. This implements the
+  algorithm in [arxiv.org/abs/1806.2281349]. The PRD will be computed for an
+  equiangular grid of num_angles values between [0, pi/2].
+
+  Args:
+    eval_dist: 1D NumPy array or list of floats with the probabilities of the
+               different states under the distribution to be evaluated.
+    ref_dist: 1D NumPy array or list of floats with the probabilities of the
+              different states under the reference distribution.
+    num_angles: Number of angles for which to compute PRD. Must be in [3, 1e6].
+                The default value is 1001.
+    epsilon: Angle for PRD computation in the edge cases 0 and pi/2. The PRD
+             will be computes for epsilon and pi/2-epsilon, respectively.
+             The default value is 1e-10.
+
+  Returns:
+    precision: NumPy array of shape [num_angles] with the precision for the
+               different ratios.
+    recall: NumPy array of shape [num_angles] with the recall for the different
+            ratios.
+
+  Raises:
+    ValueError: If not 0 < epsilon <= 0.1.
+    ValueError: If num_angles < 3.
+  """
+
+  if not (epsilon > 0 and epsilon < 0.1):
+    raise ValueError('epsilon must be in (0, 0.1] but is %s.' % str(epsilon))
+  if not (num_angles >= 3 and num_angles <= 1e6):
+    raise ValueError('num_angles must be in [3, 1e6] but is %d.' % num_angles)
+
+  # Compute slopes for linearly spaced angles between [0, pi/2]
+  angles = np.linspace(epsilon, np.pi/2 - epsilon, num=num_angles)
+  slopes = np.tan(angles)
+
+  # Broadcast slopes so that second dimension will be states of the distribution
+  slopes_2d = np.expand_dims(slopes, 1)
+
+  # Broadcast distributions so that first dimension represents the angles
+  ref_dist_2d = np.expand_dims(ref_dist, 0)
+  eval_dist_2d = np.expand_dims(eval_dist, 0)
+
+  # Compute precision and recall for all angles in one step via broadcasting
+  precision = np.minimum(ref_dist_2d*slopes_2d, eval_dist_2d).sum(axis=1)
+  recall = precision / slopes
+
+  # handle numerical instabilities leaing to precision/recall just above 1
+  max_val = max(np.max(precision), np.max(recall))
+  if max_val > 1.001:
+    raise ValueError('Detected value > 1.001, this should not happen.')
+  precision = np.clip(precision, 0, 1)
+  recall = np.clip(recall, 0, 1)
+
+  return precision, recall
+
+def compute_prd_from_embedding(dataset, num_clusters=20,
+                               num_angles=1001, num_runs=10,
+                               enforce_balance=True):
+    """Computes PRD data from sample embeddings.
+    The points from both distributions are mixed and then clustered. This leads
+    to a pair of histograms of discrete distributions over the cluster centers
+    on which the PRD algorithm is executed.
+    The number of points in eval_data and ref_data must be equal since
+    unbalanced distributions bias the clustering towards the larger dataset. The
+    check can be disabled by setting the enforce_balance flag to False (not
+    recommended).
+    Args:
+    dat: NumPy array of data points from the distribution to be evaluated.
     ref_data: NumPy array of data points from the reference distribution.
     num_clusters: Number of cluster centers to fit. The default value is 20.
     num_angles: Number of angles for which to compute PRD. Must be in [3, 1e6].
                 The default value is 1001.
     num_runs: Number of independent runs over which to average the PRD data.
     enforce_balance: If enabled, throws exception if eval_data and ref_data do
-                     not have the same length. The default value is True.
-  Returns:
+                        not have the same length. The default value is True.
+    Returns:
     precision: NumPy array of shape [num_angles] with the precision for the
-               different ratios.
+                different ratios.
     recall: NumPy array of shape [num_angles] with the recall for the different
             ratios.
-  Raises:
+    Raises:
     ValueError: If len(eval_data) != len(ref_data) and enforce_balance is set to
                 True.
-  """
+    """
+    ref_data = dataset.source_features
+    eval_data = dataset.target_features
+    if enforce_balance and len(eval_data) != len(ref_data):
+        raise ValueError(
+            'The number of points in eval_data %d is not equal to the number of '
+            'points in ref_data %d. To disable this exception, set enforce_balance '
+            'to False (not recommended).' % (len(eval_data), len(ref_data)))
 
-  if enforce_balance and len(eval_data) != len(ref_data):
-    raise ValueError(
-        'The number of points in eval_data %d is not equal to the number of '
-        'points in ref_data %d. To disable this exception, set enforce_balance '
-        'to False (not recommended).' % (len(eval_data), len(ref_data)))
 
-  eval_data = np.array(eval_data, dtype=np.float64)
-  ref_data = np.array(ref_data, dtype=np.float64)
-  precisions = []
-  recalls = []
-  for _ in range(num_runs):
-    eval_dist, ref_dist = _cluster_into_bins(eval_data, ref_data, num_clusters)
-    precision, recall = compute_prd(eval_dist, ref_dist, num_angles)
-    precisions.append(precision)
-    recalls.append(recall)
-  precision = np.mean(precisions, axis=0)
-  recall = np.mean(recalls, axis=0)
-  return precision, recall
+    eval_data = np.array(eval_data, dtype=np.float64)
+    ref_data = np.array(ref_data, dtype=np.float64)
+    precisions = []
+    recalls = []
+    for _ in range(num_runs):
+        eval_dist, ref_dist = _cluster_into_bins(eval_data, ref_data, num_clusters)
+        precision, recall = compute_prd(eval_dist, ref_dist, num_angles)
+        precisions.append(precision)
+        recalls.append(recall)
+        precision = np.mean(precisions, axis=0)
+        recall = np.mean(recalls, axis=0)
+    return precision, recall
 
 
 def _prd_to_f_beta(precision, recall, beta=1, epsilon=1e-10):
@@ -711,19 +874,27 @@ class PRCurves():
         self.dataset = SourceTargetDataset(batch_size, num_samples)
         self.num_runs = 10
         self.num_angles = 1001
-        self.num_epochs = 10
+        self.num_epochs = 50
+        self.num_clusters = 40
+        self.patience = 10
     def precision_recall_curve(self, sample):
         self.dataset.precomputeFeatures(sample)
+        # print("target ok")
         ensemble = EnsembleClassifier()
         trainer = ClassifierTrainer(self.dataset)
 
         for k in range(self.num_runs):
-            classifier = trainer.run(self.num_epochs)
+            # print(f'k : {k}/{self.num_runs}')
+            classifier = trainer.run(self.num_epochs, self.patience)
             ensemble.append(classifier)
-        precision, recall = estimatePRD(ensemble, self.dataset, self.num_angles)
-        prcurve = {"precision": precision, "recall":recall}
-        P, R = prd_to_max_f_beta_pair(precision, recall)
-        return P, R,  prcurve
+        precision_sim, recall_sim = estimatePRD(ensemble, self.dataset, self.num_angles)
+        prcurve_sim = {"precision": precision_sim, "recall":recall_sim}
+        P_sim, R_sim = prd_to_max_f_beta_pair(precision_sim, recall_sim)
+
+        precision_saj, recall_saj = compute_prd_from_embedding(self.dataset, self.num_clusters,  self.num_angles, self.num_runs)
+        prcurve_saj = {"precision": precision_saj, "recall":recall_saj}
+        P_saj, R_saj = prd_to_max_f_beta_pair(precision_saj, recall_saj)
+        return P_sim, R_sim,  prcurve_sim, P_saj, R_saj,  prcurve_saj
      
 # This produces a function which takes in an iterator which returns a set number of samples
 # and iterates until it accumulates config['num_pr_images'] images.
@@ -739,14 +910,16 @@ def prepare_pr_curve(config):
     
     prc = PRCurves(config['batch_size'], num_samples=config['num_pr_images'])
     prc.dataset.precomputeFeatures_ref(path, None)
-
+    print("ref ok")
     def get_pr_metrics(sample,itr, prints=False):
         if prints:
             logging.info('Gathering PR curves.')
-        P, R,  prcurve = prc.precision_recall_curve(sample)
-        torch.save(prcurve, path_pr_curve+f'prcurve_{itr}.pth')
+        Psimon, Rsimon,  prcurvesimon, Psajjadi, Rsajjadi,  prcurvesajjadi = prc.precision_recall_curve(sample)
 
-        return P, R
+        torch.save(prcurvesimon, path_pr_curve+f'prcurve_simon_{itr}.pth')
+        torch.save(prcurvesajjadi, path_pr_curve+f'prcurve_sajjadi_{itr}.pth')
+
+        return Psimon, Rsimon, Psajjadi, Rsajjadi
     
     return get_pr_metrics
 
