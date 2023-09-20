@@ -23,6 +23,9 @@ from torchvision.models.inception import inception_v3
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
+### wget https://download.pytorch.org/models/inception_v3_google-0cc3c7bd.pth
+
+
 
 # Module that wraps the inception network to enable use with dataparallel and
 # returning pool features and logits.
