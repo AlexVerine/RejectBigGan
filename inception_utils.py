@@ -20,6 +20,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter as P
 from torchvision.models.inception import inception_v3
+from torchvision import transforms
+from torch.utils.data import DataLoader
 
 
 # Module that wraps the inception network to enable use with dataparallel and
@@ -243,21 +245,6 @@ def calculate_inception_score(pred, num_splits=10):
   return np.mean(scores), np.std(scores)
 
 
-def accumulate_inception_activations_from_file(sample, net, num_inception_images=50000):
-  
-  dataloader = get_custom_loader(path_or_fnames, batch_size=self.batch_size, num_samples=self.num_ince)
-  num_found_images = len(dataloader.dataset)
-  if num_found_images < self.num_samples:
-    logging.info('WARNING: num_found_images(%d) < num_samples(%d)' % (num_found_images, self.num_samples))
-  pool, logits = [], []
-  while (torch.cat(logits, 0).shape[0] if len(logits) else 0) < num_inception_images:
-    with torch.no_grad():
-      images, _ = sample()
-      pool_val, logits_val = net(images.float())
-      pool += [pool_val]
-      logits += [F.softmax(logits_val, 1)]
-  return torch.cat(pool, 0), torch.cat(logits, 0)
-
 # Loop and run the sampler and the net until it accumulates num_inception_images
 # activations. Return the pool, the logits, and the labels (if one wants 
 # Inception Accuracy the labels of the generated class will be needed)
@@ -285,6 +272,25 @@ def accumulate_inception_activations_torch(sample, net, num_inception_images=500
       pool += [pool_val]
       logits += [F.softmax(logits_val, 1)]
   return torch.cat(pool, 0), torch.cat(logits, 0)
+
+def accumulate_inception_activations_npz(sample, net, num_inception_images=50000):
+    batch_size = 256
+    sample = torch.Tensor(np.load(sample)['imgs'])
+    sample = sample[:num_inception_images]
+    desc = 'extracting features of %d images' % sample.size(0)
+    num_batches = int(np.ceil(sample.size(0) / batch_size))
+
+    pool, logits = [], []
+    with torch.no_grad():
+      for bi in range(num_batches):
+          start = bi * batch_size
+          end = start + batch_size
+          images = sample[start:end]
+          pool_val, logits_val = net(images.cuda().float())
+          pool += [pool_val]
+          logits += [F.softmax(logits_val, 1)]
+    return torch.cat(pool, 0), torch.cat(logits, 0)
+
 
 # Load and wrap the Inception model
 def load_inception_net(parallel=False):
@@ -315,7 +321,7 @@ def prepare_inception_metrics(dataset, parallel, no_fid=False):
       logging.info('Gathering activations...')
 
     if isinstance(sample, str):
-        print('cool')
+      pool, logits = accumulate_inception_activations_npz(sample, net, num_inception_images)
     elif isinstance(sample, torch.Tensor):
       pool, logits  = accumulate_inception_activations_torch(sample, net, num_inception_images)
     else:
