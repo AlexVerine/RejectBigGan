@@ -190,7 +190,7 @@ def run_sampler(config):
     outstring += '\nItr %d: Naeem Density is %2.3f, Naeem Coverage is %2.3f' % (state_dict['itr'], D, C)
 
     utils.write_evaldata(config['logs_root'], experiment_name, config, 
-                         {'itr': state_dict['itr'],'truc':config['trunc'], 'z_var':config['z_var'],  'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Psa':Psa, 'Rsa':Rsa,  'Psi':Psi, 'Rsi':Rsi, })
+                         {'itr': state_dict['itr'],'truc':config['trunc'], 'z_var':config['z_var'],  'IS_mean':IS_mean, 'IS_std' : IS_std, 'FID':FID, 'P':P, 'R':R, 'Psa':Psa, 'Rsa':Rsa,  'Psi':Psi, 'Rsi':Rsi,"D":D, "C":C })
 
     logging.info(outstring)
   if config['sample_inception_metrics']: 
