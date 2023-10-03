@@ -183,7 +183,9 @@ def D_evaluating_function(D, loaders, config, mode = "train"):
     true_real = 0
     count_fake = 0
     true_fake = 0
-    pqs = []
+    pqsr = []
+    pqsf = []
+
     for (x_real, y_real) in loaders[1]:
       Dx = D(x_real, y_real*0)
       pq = pq_rate(Dx)
@@ -191,7 +193,7 @@ def D_evaluating_function(D, loaders, config, mode = "train"):
       true_real += int((discriminator_rate(Dx)).sum())
       count_real += x_real.shape[0]
       for i in range(pq.shape[0]):
-        pqs.append(pq[i].item()) 
+        pqsr.append(pq[i].item()) 
      
     for (x_fake, y_fake) in loaders[0]:
       Dx = D(x_fake, y_fake*0)
@@ -199,12 +201,16 @@ def D_evaluating_function(D, loaders, config, mode = "train"):
       true_fake += int((discriminator_rate(Dx)).sum())
       count_fake += x_fake.shape[0]
       for i in range(pq.shape[0]):
-        pqs.append(pq[i].item()) 
+        pqsf.append(pq[i].item()) 
     acc_real = true_real/count_real*100
     acc_fake = 100-true_fake/count_fake*100
 
     if mode=="train":
-      hist = np.histogram(np.array(pqs), bins=np.logspace(-3, 3, 20))
+      bins = np.linspace(-4, 2, 100)
+      pqsr = np.log10(np.array(pqsr))
+      pqsf = np.log10(np.array(pqsf))
+      histr = np.histogram(pqsr, bins=bins) 
+      histf = np.histogram(pqsf, bins=bins) 
 
 
 
@@ -218,13 +224,12 @@ def D_evaluating_function(D, loaders, config, mode = "train"):
                       experiment_name, None, None)
           # Log results to file
       test_log.log(itr=int(state_dict['itr']), Acc_real_eval=float(acc_real),
-                Acc_fake_eval=float(acc_fake), hist=hist[0].tolist())
+                Acc_fake_eval=float(acc_fake), hist=(histr[0].tolist(), histr[1].tolist(), histf[0].tolist(), histf[1].tolist()) )
 
       logging.info(f'Itr {state_dict["itr"]}: Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.  Best Acc: {acc_real+acc_fake:.2f}/{state_dict["best_Acc"]:.2f}')
       logging.info(f'Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.')
     else:
       logging.info(f'Evaluation: Accuracy on reals: {acc_real:.2f}, Accurary of Fake: {acc_fake:.2f}.')
-      print("here boyyyy")
   return test
 
 
@@ -306,11 +311,13 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
   IS_mean, IS_std, FID = get_inception_metrics(sample, 
                                                config['num_inception_images'],
                                                num_splits=10)
-  P, R = get_pr_metric(sample)
+  P, R, De, C = get_pr_metric(sample)
   # Ps, Rs = get_pr_curve(sample, state_dict['itr'])
 
   logging.info('Itr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID))
   logging.info('Itr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100))
+  logging.info('Itr %d: Naeem Density is %2.3f, Naeem Coverage is %2.3f' % (state_dict['itr'], De, C))
+
   # logging.info('Itr %d: Simon Precision is %2.3f, Simon Recall is %2.3f' % (state_dict['itr'], Ps*100, Rs*100))
 
 

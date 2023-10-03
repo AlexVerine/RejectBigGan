@@ -193,6 +193,10 @@ def load_loss(config):
 
   
 def pq_fun(config):
+  if config['which_loss'] == "vanilla":
+    def rate(Dx):
+      return torch.exp(Dx)
+    return rate
   if config['which_div'] == "rKL":
     def rate(Dx):
       Dx = torch.clamp(Dx, max=0)
