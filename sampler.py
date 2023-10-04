@@ -21,7 +21,7 @@ import precision_recall_kyn_utils
 import precision_recall_simon_utils
 import utils
 import losses
-from utils_rejection import get_sampler_function, get_sampling_function, test_sampling
+from utils_rejection import get_sampler_function, get_sampling_function, test_sampling, plot_rejected
 
 
 
@@ -101,6 +101,11 @@ def run_sampler(config):
   # sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)  
 
   sample = functools.partial(utils.sample, G=G, z_=z_, y_=y_, config=config)  
+  if config['sampling'] is not None:
+    images_all, labels_all = sample()    
+    images_all = images_all[:100]
+    labels_all = labels_all[:100]
+
   Sampling, M = get_sampling_function(config, sample, D)
   Sampling.eval()
   # loaders = utils.get_data_loaders(**{**config, 'original':False})
@@ -137,7 +142,12 @@ def run_sampler(config):
                                 '%s/%s/%s.jpg' % (config['samples_root'], experiment_name, name),
                                 nrow=int(batch_sample**0.5),
                                 normalize=True)
-  
+  if config['sampling'] is not None:
+    plot_rejected(images_all, labels_all, D, name,
+                   Sampling, os.path.join(config['samples_root'], experiment_name),
+                   config)
+
+
   utils.seed_rng(config['seed'])
   N, Na = test_sampling(functools.partial(sampler, test=True))
 
@@ -150,7 +160,7 @@ def run_sampler(config):
   def get_metrics():
     utils.seed_rng(config['seed'])
 
-    Psi, Rsi, Psa, Rsa = get_pr_curve(sample, "eval")
+    Psi, Rsi, Psa, Rsa = get_pr_curve(sample, name)
     # Psi, Rsi, Psa, Rsa = 0, 0, 0, 0 
     utils.seed_rng(config['seed'])
 
@@ -186,7 +196,7 @@ def run_sampler(config):
                           'FID':FID, 'P':P, 'R':R, 
                           'Psa':Psa, 'Rsa':Rsa,  'Psi':Psi, 'Rsi':Rsi,
                           "D":D, "C":C,  
-                          "sampling": config['sampling'],'params': config['sampling_params'] , 'rate':1/M})
+                          "sampling": config['sampling'],'params': config['sampling_params'] , 'ratee':1/M, 'rate':Na/N})
 
     logging.info(outstring)
   if config['sample_inception_metrics']: 

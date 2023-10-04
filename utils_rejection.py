@@ -10,8 +10,10 @@ import animal_hash
 import logging
 import torch
 import torch.nn as nn
-
+import matplotlib.pyplot as plt
 from losses import pq_fun
+
+
 
 class NoSampling(nn.Module):
   def __init__(self):
@@ -119,15 +121,17 @@ def get_sampling_function(config, sample, D):
           pq = rate(Dxf)
           M = torch.max(torch.vstack((pq, M)))
           pqs = torch.vstack((pqs, pq))
-      Zq = torch.mean(pqs[1:])
-      M = M/Zq
+
+      np.save("pqs", pqs.cpu().numpy())
+      # Zq = torch.mean(pqs[1:])
+      # M = M/Zq
       # print(Zq)
       M = torch.from_numpy(M .float().cpu().numpy()).cuda()
 
       if config['sampling'] == "DRS":
-        return DRSampling(config, M, Zq).cuda(), M
+        return DRSampling(config, M, M/M).cuda(), M
       else:
-        sampling = BudgetSampling(config, M, Zq).cuda()
+        sampling = BudgetSampling(config, M, M/M).cuda()
         sampling.eval()
         sampling(pqs[1: 1000], update=True)
         return sampling, M
@@ -182,3 +186,27 @@ def test_sampling(sampler):
     Na+=na
   return N, Na
 
+
+def plot_rejected(imgs, labels, D, name, sampling, dir, config):
+    rate =  pq_fun(config)
+    with torch.no_grad():
+        torch.manual_seed(0)
+
+        pq = rate(D(imgs, labels))
+        a = sampling(pq)
+        idx = a >= torch.rand((100, 1)).cuda()
+    plt.figure(figsize=(12,12),  layout="compressed")
+    for k in range(100):
+        plt.subplot(10,10, k+1,)
+        plt.imshow((imgs[k].cpu().permute(1,2,0).numpy()+1)/2)
+        plt.gca().add_patch(plt.Rectangle((0,-0),imgs.shape[2]-1,imgs.shape[2]-1,
+            edgecolor='green' if idx[k] else 'red',
+            facecolor='none',
+            lw=5))
+        plt.xticks([])
+        plt.yticks([])
+    # plt.savefig(f'imgs/{name}.pdf')
+    plt.savefig(f'{dir}/reject_{name}.png',dpi=100)
+
+#     plt.tight_layout()
+    plt.close()

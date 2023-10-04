@@ -80,6 +80,7 @@ def rkl_loss_gen(dis_fake):
 
 def kl_loss_dis(dis_fake, dis_real):
   dis_fake = torch.clamp(dis_fake, max=10)
+  dis_real = torch.clamp(-10)
   loss_real = -torch.mean(dis_real)
   loss_fake = torch.mean(torch.exp(dis_fake-1))
   return loss_real, loss_fake
@@ -148,7 +149,7 @@ class PRLoss(nn.Module):
 def rate(config):
   if config['which_loss'] == 'vanilla':
     def rate_vanilla(Dx):
-      return Dx>0
+      return Dx>1
     return rate_vanilla
   else:
     if config['which_div'] == 'Chi2':
