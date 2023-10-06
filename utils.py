@@ -338,10 +338,10 @@ def prepare_parser():
     help='How2trainyourbois (default: %(default)s)')  
   parser.add_argument(
     '--which_loss', type=str, default='vanilla',
-    help='Whichlossprecedure (default: %(default)s)', choices=['vanilla', 'div', 'PR']) 
+    help='Whichlossprecedure (default: %(default)s)', choices=['vanilla', 'reject', 'div', 'PR']) 
   parser.add_argument(
     '--which_div', type=str, default='Chi2',
-    help='Whichlossprecedure (default: %(default)s)', choices=['Chi2', 'KL', 'rKL', 'pr']) 
+    help='Whichlossprecedure (default: %(default)s)', choices=['Chi2', 'KL', 'rKL', 'pr', 'gan', 'hinge']) 
   parser.add_argument(
     '--lambda', type=float, default=1.0,
     help='Whatlambda (default: %(default)s)') 
@@ -381,11 +381,13 @@ def prepare_parser():
    ##Sapmpling Stuff
   parser.add_argument('--sampling', type=str, default=None, 
                        choices=['OBRS', "DRS"])
-  parser.add_argument("--budget", type=float, default=None, help='Minimum acceptance rate')
-  parser.add_argument('--drs', default=False, action='store_true')
+  parser.add_argument('--TOBRS', default=False, action='store_true')
+  parser.add_argument("--budget", type=float, default=0.5, help='Minimum acceptance rate')
   parser.add_argument('--gamma_drs', type=float, default=0)
   parser.add_argument('--eps_drs', type=float, default=1e-3)
-  
+  parser.add_argument(
+    '--update_every', type=int, default=2000,
+    help='Save every X iterations (default: %(default)s)')
   return parser
 
 # Arguments for sample.py; not presently used in train.py
@@ -929,7 +931,7 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
       model_dict.pop('embed.sv0')
 
       D.load_state_dict(model_dict,
-        strict=strict)
+        strict=False)
     if load_optim:
       D.optim.load_state_dict(
         torch.load('%s/%s.pth' % (root, join_strings('_', ['D_optim', name_suffix]))))
@@ -1205,8 +1207,11 @@ def name_from_config(config):
   'Big%s' % config['which_train_fn'],
   config['dataset'],
   config['model'] if config['model'] != 'BigGAN' else None,
-  'loss%s' % config['which_loss'],
-  'div%s' % config['which_div'] if config['which_loss'] != 'vanilla' else None,
+  'loss%s' % config['which_loss'] if config['which_loss'] != 'reject' else 'reject' ,
+  'NoRST' if not config['TOBRS'] else 'TOBRS' if config['which_loss'] == 'reject' else None,
+  'K%2.2f' % config['budget'] if config['which_loss'] == 'reject' else None,
+  'Ueve%d' % config['update_every'] if config['which_loss'] == 'reject' else None,
+  'div%s' % config['which_div'] if (config['which_loss'] != 'vanilla' or config['which_loss'] != 'reject') else None,
   'lam%2.2f' % config['lambda'] if config['which_loss'] == 'PR' or  config['which_div'] == 'pr' else None,
   'seed%d' % config['seed'],
   'Gch%d' % config['G_ch'],
