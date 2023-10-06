@@ -57,6 +57,21 @@ class pr_loss_gen(torch.nn.Module):
     loss_fake = -torch.mean(dis_fake/self.l)
     return loss_fake
 
+def gan_loss_dis(dis_fake, dis_real):
+  dis_fake = torch.sigmoid(dis_fake) 
+  dis_real = torch.sigmoid(dis_real)
+  return -torch.log(1e-5+dis_real).mean(), -torch.log(1e-5+1-dis_fake).mean()
+
+
+def gan_loss_gen(dis_fake):
+  dis_fake = torch.sigmoid(dis_fake) 
+  return -torch.log(1e-5+dis_fake).mean()
+
+def gan_loss_rej(dis_fake, a, K):
+  dis_fake = torch.sigmoid(dis_fake)
+  u = dis_fake/((1e-5+1-dis_fake)*(1e-5+K*a))
+  return (K*a*(u*torch.log(1e-5+u)-(u+1)*torch.log(u+1))).mean()
+
 
 
 def rkl_loss_dis(dis_fake, dis_real):
@@ -78,9 +93,10 @@ def rkl_loss_gen(dis_fake):
   return loss_fake
 
 
+
 def kl_loss_dis(dis_fake, dis_real):
   dis_fake = torch.clamp(dis_fake, max=10)
-  dis_real = torch.clamp(-10)
+  dis_real = torch.clamp(dis_fake, min=-100)
   loss_real = -torch.mean(dis_real)
   loss_fake = torch.mean(torch.exp(dis_fake-1))
   return loss_real, loss_fake
@@ -89,6 +105,17 @@ def kl_loss_gen(dis_fake):
   dis_fake = torch.clamp(dis_fake, max=10)
   loss_fake = -torch.mean(torch.exp(dis_fake-1))
   return loss_fake
+
+def kl_loss_rej(dis_fake, a, K):
+  dis_fake = torch.clamp(dis_fake, max=10)
+  pph = torch.exp(dis_fake-1)
+  ppt = pph/(K*a+1e-5)
+  return (K*a*ppt*torch.log(pph+1e-5)).mean()
+
+def loss_hinge_rej(dis_fake, a, K):
+  loss = -torch.mean(K*a*dis_fake)
+  return loss
+
 
 def chi2_loss_dis(dis_fake, dis_real):
   dis_fake = torch.clamp(dis_fake, min=-2)
@@ -168,6 +195,10 @@ def rate(config):
       def ratepr(Dx):
         return  Dx>config['lambda']/2
       return ratepr
+    elif config['which_div'] == "gan" or config['which_div'] == "hinge":
+      def rategan(Dx):
+        return Dx>0
+      return rategan
 
   
 def load_loss(config):
@@ -190,6 +221,13 @@ def load_loss(config):
     elif config['which_div'] == 'rKL':
       loss_dis = rkl_loss_dis
     return PRLoss(config), loss_dis
+  elif config['which_loss'] == 'reject':
+    if config['which_div'] == 'KL':
+      return kl_loss_rej, kl_loss_dis
+    elif config['which_div'] == 'gan':
+      return gan_loss_rej, gan_loss_dis
+    elif config['which_div'] == 'hinge':
+      return loss_hinge_rej, gan_loss_dis
 
 
   
@@ -211,6 +249,11 @@ def pq_fun(config):
     def rate(Dx):
       Dx = torch.clamp(Dx, min=-2, max=20)+1e-3
       return Dx/2+1
+    return rate
+  elif config['which_div'] == "gan" or config['which_div'] == "hinge":
+    def rate(Dx):
+      Dx = torch.sigmoid(Dx)
+      return Dx/(1-Dx+1e-5)
     return rate
 # # # Default to hinge loss
 # # generator_loss = loss_hinge_gen

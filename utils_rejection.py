@@ -18,8 +18,8 @@ from losses import pq_fun
 class NoSampling(nn.Module):
   def __init__(self):
     super(NoSampling, self).__init__()
-
-  def forward(self, pq):
+    self.c = 1
+  def forward(self, pq, update=False):
     return torch.ones_like(pq)
   
     
@@ -31,7 +31,7 @@ class DRSampling(nn.Module):
     self.M = M
     self.Zq = Zq
 
-  def forward(self, pq=None):
+  def forward(self, pq=None, update=False):
     return torch.sigmoid(torch.log(pq/self.Zq) - torch.log(self.M) - torch.log(1-pq/self.M*np.exp(-self.eps_drs)) - self.gamma_drs)
 
 
@@ -41,40 +41,14 @@ class BudgetSampling(nn.Module):
   def __init__(self, params, M, Zq):
     super(BudgetSampling, self).__init__()
     self.budget = params['budget']
-    self.c = 1
+    self.c = None
     self.M = M
     self.Zq = Zq
-
-
-  # def compute_optimal_c(self, pq, n_iterations, depth=1, scale=1):
-  #   if depth>30:
-  #     return 1
-  #   pqm = pq/self.M
-
-  #   lr = 1e-1*scale
-  #   with torch.no_grad():
-  #     c = 1
-  #     for n in range(n_iterations):
-  #       grad = (pqm*(pqm*c<=1)).sum()*(torch.clamp(pqm*c, min=0, max=1) - self.budget).sum()
-  #       c, c_prev = c - lr*(grad-1e-5), c
-  #       if n % 3000 == 0 and n>0:
-  #         lr /= 2 
-  #       if abs(torch.mean(torch.clamp(pqm*c, min=0, max=1))-self.budget)<=5e-4:
-  #         break
-  #   logging.info(f'\tOptiC: n: {n}, \t c:{c:.2f}, gap:{abs(torch.mean(torch.clamp(pqm*c, min=0, max=1))-self.budget):.2f}, \t rate:{torch.mean(torch.clamp(pqm*c, min=0, max=1)):.2f}, grad: {grad:.2f}')
-  #   logging.info(f'\tOptiC: scale: {scale:.3e}, depth: {depth}, lr:{lr:.3e}')
-
-
-  #   if n == n_iterations-1:
-  #     c_deep = self.compute_optimal_c(pq, n_iterations, depth=depth+1, scale=scale*0.5)
-  #     if abs(torch.mean(torch.clamp(pqm*c, min=0, max=1))-self.budget)>abs(torch.mean(torch.clamp(pqm*c_deep, min=0, max=1))-self.budget):
-  #       return c_deep
-  #   return c
 
   def compute_optimal_c(self, pq, n_iterations, depth=1, scale=1):
     pqm = torch.Tensor((pq/self.M).cpu().numpy()).cuda()
     c_min = 1e-7
-    c_max = 1e10
+    c_max = 1e11
     c_med = (c_min+c_max)/2
     n_iteration = 0
     while n_iteration<n_iterations:
@@ -87,52 +61,57 @@ class BudgetSampling(nn.Module):
       else:
         n_iteration = n_iterations
       n_iteration += 1
-      print(f'i: {n_iteration} c:{c_med:.2f}, bud: {torch.mean(torch.clamp(pqm*c_med, min=0, max=1)):.2f}')
+      # print(f'i: {n_iteration} c:{c_med:.2f}, bud: {torch.mean(torch.clamp(pqm*c_med, min=0, max=1)):.2f}')
     return torch.Tensor([c_med]).cuda()
 
   def update(self, pq):  
     n_update = 100 if self.training else 1000
-  
-    if self.budget is not None:
-      c_opt = torch.clamp(self.compute_optimal_c(pq, n_update), min=1)
-    else:
-      c_opt = 1
+    with torch.no_grad():
+      if self.budget is not None:
+        c_opt = torch.clamp(self.compute_optimal_c(pq, n_update), min=1)
+      else:
+        c_opt = 1
 
     self.c = c_opt
     
   def forward(self, pq, update=False):
     pq = pq/self.Zq
-    if update or self.training:
+    # if update or self.training:
+    if update:
       self.update(pq)
     return torch.clamp(pq/self.M*self.c, min=0, max=1)
 
 
-def get_sampling_function(config, sample, D):
-  if config['sampling'] is None:
-    return NoSampling().cuda(), 1
+def get_sampling_function(config, sample, D, train=False):
+  if train:
+    num_samples = 1000
+  else:
+    num_samples = 10000
+  if config['sampling'] is None or (config['sampling']=='OBRS' and config['budget'] == 1.0):
+    return NoSampling().cuda(), torch.Tensor([1.]).cuda()
+
   else:
     rate = pq_fun(config)
     with torch.no_grad():
       M = torch.Tensor([0.]).cuda()
       pqs = torch.Tensor([0.]).cuda()
-      while pqs.shape[0]<1000:
+      while pqs.shape[0]<num_samples:
           x, y = sample()
+          print(y[:10])
           Dxf = D(x,y)
           pq = rate(Dxf)
           M = torch.max(torch.vstack((pq, M)))
           pqs = torch.vstack((pqs, pq))
 
-      np.save("pqs", pqs.cpu().numpy())
-      # Zq = torch.mean(pqs[1:])
-      # M = M/Zq
+      Zq = torch.mean(pqs[1:])
+      M = M/Zq
       # print(Zq)
-      M = torch.from_numpy(M .float().cpu().numpy()).cuda()
+      M = torch.from_numpy(M.float().cpu().numpy()).cuda()
 
       if config['sampling'] == "DRS":
-        return DRSampling(config, M, M/M).cuda(), M
+        return DRSampling(config, M, Zq).cuda(), M
       else:
-        sampling = BudgetSampling(config, M, M/M).cuda()
-        sampling.eval()
+        sampling = BudgetSampling(config, M, Zq).cuda()
         sampling(pqs[1: 1000], update=True)
         return sampling, M
         
@@ -141,7 +120,7 @@ def get_sampling_function(config, sample, D):
 def get_sampler_function(config, sampling, D, sample):
   rate = pq_fun(config)
   n_samples = config['batch_size']
-  if config['sampling'] is None:
+  if config['sampling'] is None or (config['sampling']=='OBRS' and config['budget'] == 1.0):
     def RejectionSampler(test=False):
       with torch.no_grad():
         x_fake, y_fake = sample()

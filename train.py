@@ -32,6 +32,10 @@ import losses
 import train_fns
 from sync_batchnorm import patch_replication_callback
 
+from utils_rejection import get_sampling_function, get_sampler_function
+
+
+
 # The main training file. Config is a dictionary specifying the configuration
 # of this training run.
 def run(config):
@@ -156,7 +160,7 @@ def run(config):
   get_inception_metrics = inception_utils.prepare_inception_metrics(config['dataset'], config['parallel'], config['no_fid'])
   #Prepare vgg metrics: Precision and Recall
   get_pr_metric = precision_recall_kyn_utils.prepare_pr_metrics(config)
-  # get_pr_curve = precision_recall_simon_utils.prepare_pr_curve(config)
+  get_pr_curve = precision_recall_simon_utils.prepare_pr_curve(config)
   # Prepare noise and randomly sampled label arrays
   # Allow for different batch sizes in G
   G_batch_size = max(config['G_batch_size'], config['batch_size'])
@@ -169,8 +173,11 @@ def run(config):
   fixed_z.sample_()
   fixed_y.sample_()
   # Loaders are loaded, prepare the training function
-  if config['which_train_fn'] == 'GAN':
+  if config['which_train_fn'] == 'GAN' and (config['which_loss'] == 'vanilla' or config['which_loss'] == 'pr'):
     train = train_fns.GAN_training_function(G, D, GD, z_, y_, 
+                                            ema, state_dict, config)
+  elif config['which_loss'] == 'reject':
+      train = train_fns.Reject_training_function(G, D, GD, z_, y_, 
                                             ema, state_dict, config)
   # Else, assume debugging and use the dummy train fn
   else:
@@ -180,6 +187,23 @@ def run(config):
                               G=(G_ema if config['ema'] and config['use_ema']
                                  else G),
                               z_=z_, y_=y_, config=config)
+
+  if config['which_loss'] == 'reject':
+    config['sampling'] = 'OBRS'
+
+    if config['TOBRS'] and state_dict['itr']>100:
+      Sampling, M = get_sampling_function(config, sample, D)
+      Sampling = Sampling.cuda()
+      Sampling.train()
+    else:
+      Sampling, M = get_sampling_function({**config, 'budget': 1.0}, sample, D)
+      Sampling = Sampling.cuda()
+    # loaders = utils.get_data_loaders(**{**config, 'original':False})
+
+  #load datasets: loaders[0]=G, loaders[1]=Dataset 
+  # sampler = get_sampler_function(config, sampling=Sampling.cuda(), D=D, sample=sample)
+  # sample_reject = functools.partial(sampler, test=False)
+
 
   logging.info(f'Beginning training at epoch {state_dict["epoch"]} for {config["total_itr"]} iterations.')
   t_init = time.time()
@@ -197,13 +221,15 @@ def run(config):
       # For D, which typically doesn't have BN, this shouldn't matter much.
       G.train()
       D.train()
+      Sampling.train()
+
       if config['ema']:
         G_ema.train()
       if config['D_fp16']:
         x, y = x.to(device).half(), y.to(device)
       else:
         x, y = x.to(device), y.to(device)
-      metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']))
+      metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']), sampling=Sampling if config['which_loss'] == 'reject' else None)
       train_log.log(itr=int(state_dict['itr']), **metrics)
       
       # Every sv_log_interval, log singular values
@@ -232,16 +258,38 @@ def run(config):
           G.eval()
           if config['ema']:
             G_ema.eval()
+
         train_fns.save_and_sample(G, D, G_ema, z_, y_, fixed_z, fixed_y, 
                                   state_dict, config, experiment_name)
+      if not (state_dict['itr'] % config['update_every']) and state_dict['itr']>config['test_every']:
+        if config['TOBRS']:
+          Sampling, M = get_sampling_function(config, sample, D, train=True)
+          Sampling = Sampling.cuda()
+          Sampling.eval()
 
       # Test every specified interval
       if not (state_dict['itr'] % config['test_every']):
         if config['G_eval_mode']:
           logging.info('Switchin G to eval mode...')
           G.eval()
-        train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
-                       get_inception_metrics, get_pr_metric, experiment_name, test_log)
+          D.eval()
+        if config['which_loss'] == 'reject':
+            Sampling, M = get_sampling_function(config, sample, D, train=False)
+            Sampling = Sampling.cuda()
+            Sampling.eval()
+            sample_reject = get_sampler_function(config, sampling=Sampling, D=D, sample=sample)
+            print(Sampling.budget)
+
+            train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample_reject,    
+                      get_inception_metrics, get_pr_metric, get_pr_curve,  experiment_name, test_log, Sampling)
+            if not config['TOBRS']:
+              Sampling, M = get_sampling_function({**config, 'budget': 1.0}, sample, D)
+              Sampling = Sampling.cuda()
+
+        else:
+          train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample_reject,
+                      get_inception_metrics, get_pr_metric, experiment_name, test_log)
+              
         logging.info(f'\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
               + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) / 3600:2.1f} hours.')
     # Increment epoch counter at end of epoch
