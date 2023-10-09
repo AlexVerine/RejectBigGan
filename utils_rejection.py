@@ -97,7 +97,7 @@ def get_sampling_function(config, sample, D, train=False):
       pqs = torch.Tensor([0.]).cuda()
       while pqs.shape[0]<num_samples:
           x, y = sample()
-          print(y[:10])
+          # print(y[:10])
           Dxf = D(x,y)
           pq = rate(Dxf)
           M = torch.max(torch.vstack((pq, M)))

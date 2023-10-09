@@ -894,6 +894,11 @@ def load_weights(G, D, state_dict, weights_root, experiment_name,
     if "C10" in experiment_name:
       load_weights(G, D, state_dict, weights_root, 'basemodels/C10', 
                  None, G_ema, False, load_optim)
+
+    elif "CA64" in experiment_name:
+      logging.info(f'Loading Basemodels Weights  from basemodels/CA64.')
+      load_weights(G, D, state_dict, weights_root, 'basemodels/CA64', 
+                 None, G_ema, True, load_optim)
     elif "I64" in experiment_name:
       load_weights(G, D, state_dict, weights_root, 'basemodels/I64', 
                  None, G_ema, False, load_optim)

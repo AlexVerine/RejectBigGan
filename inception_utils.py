@@ -319,7 +319,7 @@ def prepare_inception_metrics(dataset, parallel, no_fid=False):
   # Load network
   net = load_inception_net(parallel)
   def get_inception_metrics(sample, num_inception_images, num_splits=10, 
-                            prints=False, use_torch=True):
+                            prints=False, use_torch=False):
     if prints:
       logging.info('Gathering activations...')
 

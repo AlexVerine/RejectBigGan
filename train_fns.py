@@ -313,7 +313,7 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
                            config['num_standing_accumulations'])
   IS_mean, IS_std, FID = get_inception_metrics(functools.partial(sample, test=False), 
                                                config['num_inception_images'],
-                                               num_splits=10, use_torch=True)
+                                               num_splits=10, use_torch=False)
   P, R, De, C = get_pr_metric(functools.partial(sample, test=False))
   Psi, Rsi, Psa, Rsa = get_pr_curve(functools.partial(sample, test=False), state_dict['itr'])
 
