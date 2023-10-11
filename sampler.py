@@ -71,7 +71,7 @@ def run_sampler(config):
                        else utils.name_from_config(config))
   logging.info('Experiment name is %s' % experiment_name)
   utils.prepare_root(config)
-
+  config['budget'] = config['budget_test']
   G = model.Generator(**config).cuda()
   D = model.Discriminator(**config).to(device)
 
@@ -113,7 +113,7 @@ def run_sampler(config):
   #load datasets: loaders[0]=G, loaders[1]=Dataset 
   sampler = get_sampler_function(config, sampling=Sampling, D=D, sample=sample)
   sample = functools.partial(sampler, test=False)
-  print(f'Rate : {1/M:.3f}')
+  print(f'Rate : {1/M.item():.3f}')
 
 
   if config['sampling'] is not None:

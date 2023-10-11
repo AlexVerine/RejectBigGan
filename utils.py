@@ -383,6 +383,8 @@ def prepare_parser():
                        choices=['OBRS', "DRS"])
   parser.add_argument('--TOBRS', default=False, action='store_true')
   parser.add_argument("--budget", type=float, default=0.5, help='Minimum acceptance rate')
+  parser.add_argument("--budget_test", type=float, default=0.5, help='Minimum acceptance rate for eval')
+
   parser.add_argument('--gamma_drs', type=float, default=0)
   parser.add_argument('--eps_drs', type=float, default=1e-3)
   parser.add_argument(
