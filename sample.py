@@ -24,7 +24,7 @@ import losses
 
 
 
-def run_sampler(config):
+def run_sample(config):
   # Prepare state dict, which holds things like epoch # and itr #
   state_dict = {'itr': 0, 'epoch': 0, 'save_num': 0, 'save_best_num': 0,
                 'best_IS': 0, 'best_FID': 999999, 'config': config}
@@ -225,7 +225,7 @@ def main():
 
 
   print(config)
-  run_sampler(config)
+  run_sample(config)
   
 if __name__ == '__main__':    
   main()
