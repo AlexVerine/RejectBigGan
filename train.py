@@ -293,7 +293,7 @@ def run(config):
               Sampling = Sampling.cuda()
 
         else:
-          train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample_reject,
+          train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
                       get_inception_metrics, get_pr_metric, experiment_name, test_log)
               
         logging.info(f'\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
