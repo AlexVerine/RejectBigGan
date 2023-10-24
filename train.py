@@ -231,7 +231,11 @@ def run(config):
         x, y = x.to(device).half(), y.to(device)
       else:
         x, y = x.to(device), y.to(device)
-      metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']), sampling=Sampling if config['which_loss'] == 'reject' else None)
+      if config['which_loss'] == 'reject':
+        metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']), sampling=Sampling if config['which_loss'] == 'reject' else None)
+      else:
+        metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']))
+
       train_log.log(itr=int(state_dict['itr']), **metrics)
       
       # Every sv_log_interval, log singular values

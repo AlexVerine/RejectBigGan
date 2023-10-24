@@ -911,7 +911,7 @@ def prepare_pr_curve(config):
     prc = PRCurves(config['batch_size'], num_samples=config['num_pr_images'])
     prc.dataset.precomputeFeatures_ref(path, None)
     print("ref ok")
-    def get_pr_metrics(sample,itr, prints=False):
+    def get_pr_metrics(sample, itr, prints=False):
         if prints:
             logging.info('Gathering PR curves.')
         Psimon, Rsimon,  prcurvesimon, Psajjadi, Rsajjadi,  prcurvesajjadi = prc.precision_recall_curve(sample)

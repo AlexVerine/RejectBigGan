@@ -112,7 +112,7 @@ def get_sampling_function(config, sample, D, train=False):
         return DRSampling(config, M, Zq).cuda(), M
       else:
         sampling = BudgetSampling(config, M, Zq).cuda()
-        sampling(pqs[1: 1000], update=True)
+        sampling(pqs[1: num_samples], update=True)
         return sampling, M
         
 

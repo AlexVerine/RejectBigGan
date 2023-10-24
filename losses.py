@@ -113,7 +113,8 @@ def kl_loss_rej(dis_fake, a, K):
   return (K*a*ppt*torch.log(pph+1e-5)).mean()
 
 def loss_hinge_rej(dis_fake, a, K):
-  loss = -torch.mean(K*a*dis_fake)
+  loss = torch.mean(K*a*F.softplus(-dis_fake))
+
   return loss
 
 
