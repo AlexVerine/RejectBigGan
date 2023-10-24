@@ -173,7 +173,7 @@ def run(config):
   fixed_z.sample_()
   fixed_y.sample_()
   # Loaders are loaded, prepare the training function
-  if config['which_train_fn'] == 'GAN' and (config['which_loss'] == 'vanilla' or config['which_loss'] == 'pr'):
+  if config['which_train_fn'] == 'GAN' and (config['which_loss'] == 'vanilla' or config['which_loss'] == 'PR'):
     train = train_fns.GAN_training_function(G, D, GD, z_, y_, 
                                             ema, state_dict, config)
   elif config['which_loss'] == 'reject':
@@ -221,7 +221,9 @@ def run(config):
       # For D, which typically doesn't have BN, this shouldn't matter much.
       G.train()
       D.train()
-      Sampling.train()
+      if config['which_loss'] == 'reject':
+
+        Sampling.train()
 
       if config['ema']:
         G_ema.train()
