@@ -307,21 +307,24 @@ def save_and_sample(G, D, G_ema, z_, y_, fixed_z, fixed_y,
     improvement. '''
 def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
          get_pr_metric, get_pr_curve, experiment_name, test_log, Sampling=None):
+  if config['which_loss'] == 'reject':
+    sample = functools.partial(sample, test=False)
   if config['accumulate_stats']:
     utils.accumulate_standing_stats(G_ema if config['ema'] and config['use_ema'] else G,
                            z_, y_, config['n_classes'],
                            config['num_standing_accumulations'])
-  IS_mean, IS_std, FID = get_inception_metrics(functools.partial(sample, test=False), 
+  IS_mean, IS_std, FID = get_inception_metrics(sample, 
                                                config['num_inception_images'],
                                                num_splits=10, use_torch=False)
-  P, R, De, C = get_pr_metric(functools.partial(sample, test=False))
-  Psi, Rsi, Psa, Rsa = get_pr_curve(functools.partial(sample, test=False), state_dict['itr'])
+  P, R, De, C = get_pr_metric(sample )
+  Psi, Rsi, Psa, Rsa = get_pr_curve(sample, state_dict['itr'])
 
-  M = torch.from_numpy(Sampling.M.cpu().numpy())
   if config['which_loss'] == 'reject':
+    M = torch.from_numpy(Sampling.M.cpu().numpy())
     N, Na = test_sampling(functools.partial(sample, test=True))
     logging.info('Itr %d: Estimated Acceptance Rate: %2.3f Vs Actual Acceptance Rate %2.3f' % (state_dict['itr'], 100/M, 100*Na/N))
-
+  else: 
+    M=1
 
   logging.info('Itr %d: PYTORCH UNOFFICIAL Inception Score is %3.3f +/- %3.3f, PYTORCH UNOFFICIAL FID is %5.4f' % (state_dict['itr'], IS_mean, IS_std, FID))
   logging.info('Itr %d: Kynkäänniemi Precision is %2.3f, Kynkäänniemi Recall is %2.3f' % (state_dict['itr'], P*100, R*100))
@@ -352,9 +355,13 @@ def test(G, D, G_ema, z_, y_, state_dict, config, sample, get_inception_metrics,
                Psa=float(Psa), Rsa=float(Rsa), Psi=float(Psi), Rsi=float(Rsi),
                M=float(100/M), Rate=float(100*Na/N), c=float(Sampling.c))
   else:
-    # Log results to file
+    # Log results     
     test_log.log(itr=int(state_dict['itr']), IS_mean=float(IS_mean),
-               IS_std=float(IS_std), FID=float(FID), P=float(P), R=float(R))
+               IS_std=float(IS_std), FID=float(FID), P=float(P), R=float(R), D=float(De), C=float(C), 
+               Psa=float(Psa), Rsa=float(Rsa), Psi=float(Psi), Rsi=float(Rsi))
+  # else:to file
+  #   test_log.log(itr=int(state_dict['itr']), IS_mean=float(IS_mean),
+  #              IS_std=float(IS_std), FID=float(FID), P=float(P), R=float(R))
 
 
 

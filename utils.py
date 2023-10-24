@@ -462,7 +462,7 @@ def add_cluster_parser(parser):
                       help="Execute with local machine instead of slurm.")
   parser.add_argument("--debug", action="store_true",
                       help="Activate debug mode.")
-  parser.add_argument("--mode", default="train", choices=['train', 'sample'])
+  parser.add_argument("--mode", default="train", choices=['train', 'sample', 'sampler'])
   parser.add_argument("--D_only", default=None, action='store_true')
 
   return parser
@@ -1218,7 +1218,7 @@ def name_from_config(config):
   'NoRST' if not config['TOBRS'] else 'TOBRS' if config['which_loss'] == 'reject' else None,
   'K%2.2f' % config['budget'] if config['which_loss'] == 'reject' else None,
   'Ueve%d' % config['update_every'] if config['which_loss'] == 'reject' else None,
-  'div%s' % config['which_div'] if (config['which_loss'] != 'vanilla' or config['which_loss'] != 'reject') else None,
+  'div%s' % config['which_div'] if (config['which_loss'] != 'vanilla') else None,
   'lam%2.2f' % config['lambda'] if config['which_loss'] == 'PR' or  config['which_div'] == 'pr' else None,
   'seed%d' % config['seed'],
   'Gch%d' % config['G_ch'],

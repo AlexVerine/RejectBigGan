@@ -222,7 +222,6 @@ def run(config):
       G.train()
       D.train()
       if config['which_loss'] == 'reject':
-
         Sampling.train()
 
       if config['ema']:
@@ -232,10 +231,9 @@ def run(config):
       else:
         x, y = x.to(device), y.to(device)
       if config['which_loss'] == 'reject':
-        metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']), sampling=Sampling if config['which_loss'] == 'reject' else None)
+        metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']), sampling=Sampling)
       else:
         metrics = train(x, y, train_G=(i>30 or not config['resume_no_optim']))
-
       train_log.log(itr=int(state_dict['itr']), **metrics)
       
       # Every sv_log_interval, log singular values
@@ -291,10 +289,10 @@ def run(config):
             if not config['TOBRS']:
               Sampling, M = get_sampling_function({**config, 'budget': 1.0}, sample, D)
               Sampling = Sampling.cuda()
-
         else:
-          train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
-                      get_inception_metrics, get_pr_metric, experiment_name, test_log)
+            train_fns.test(G, D, G_ema, z_, y_, state_dict, config, sample,
+                      get_inception_metrics, get_pr_metric, get_pr_curve, 
+                           experiment_name, test_log)
               
         logging.info(f'\tEstimated time: {(time.time()-t_init)*config["total_itr"]/state_dict["itr"] // 86400:.0f} days and '
               + f'{ ( ( time.time()-t_init)*config["total_itr"]/state_dict["itr"] % 86400) / 3600:2.1f} hours.')
